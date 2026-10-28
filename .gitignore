@@ -1,0 +1,35 @@
+# Prerequisites / Build Directories
+build/
+cmake-build-*/
+bin/
+lib/
+
+# Compiled Object Files & Libraries
+*.o
+*.a
+*.so
+*.dylib
+*.bpf.o
+
+# CLion & JetBrains IDE
+.idea/*
+!.idea/runConfigurations/
+*.iws
+*.iml
+cmake-build-debug/
+cmake-build-release/
+cmake-build-relwithdebinfo/
+
+# Python Cache & Plots
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# OS-Specific Files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Scratch Files
+*.tmp
+*.log

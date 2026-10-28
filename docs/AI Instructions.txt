@@ -1,0 +1,18 @@
+Using AI to generate structural scaffolding with TODO comments is an excellent, permissible workflow for this project. It removes the friction of boilerplate while forcing you to write the critical RDMA verbs and algorithmic logic yourself.
+Because the project specification already provides exact, step-by-step algorithms, you can use the AI strictly as an administrative assistant and a data analyst. Here is the maximum extent of non-coding AI assistance that preserves the core educational value:
+1. Generating C++ Scaffolding and TODOs
+The specification explicitly outlines the functions of the tools, such as the 8 steps required for the pingpong.cc deliverable. You can safely feed these steps to the AI and ask it to generate an empty C++ file with standard includes, a main() function, and exact TODO comments mirroring the document.
+ * Example Prompt: "Create a C++23 skeleton for pingpong.cc with no actual RDMA implementation. Just give me the headers, command-line argument parsing, and TODO comments for the 8 steps (e.g., // TODO: Step 1: Find RDMA devices with ibv_get_device_list)."
+2. Generating the CMake Build System
+The project requires a CMakeLists.txt file that handles both C++ targets (using -std=c++23) and C targets (using -std=c23 and gnu11 for eBPF). Because the goal of this project is to learn verbs programming and collective algorithms, wrestling with CMake syntax offers little educational value. Let the AI completely write and manage your CMake file.
+3. Writing Python Plotting Scripts
+The document requires you to output measurements to CSV files and analyze them, explicitly stating that plotting is "off the hot path" and suggesting matplotlib and pandas.
+ * Acceptable Use: You can provide the AI with your exact CSV headers (e.g., date, git_commit, hardware_config_id, ... latency_ns) and ask it to write the Python scripts that generate the required scaling plots and bandwidth comparisons.
+4. Interrogating the libibverbs C API
+The verbs API uses massive C structs with dozens of obscure flags. You can use the AI as an interactive manual.
+ * Acceptable Use: Instead of asking "How do I transition a QP to RTS?", ask "What is the difference between setting the destination QPN in the address handle for UD versus setting it during the RTR transition for RC?" The project requires you to measure both transports up to the UD limit, and explaining QP transitions is an explicit interview preparation question. Using AI to decipher the struct definitions helps you achieve this.
+5. eBPF Verifier Log Translation
+If you tackle the in-network aggregation stretch goal (D4), you must compile an eBPF program with the clang BPF target. The document explicitly warns that the kernel verifier might reject your program.
+ * Acceptable Use: When the verifier fails, paste the bpftool prog load output into the AI and ask, "Which specific memory boundary did I violate here?" It will translate the kernel's hex dump into readable C constraints, leaving you to actually fix the packet parsing logic.
+6. Gap Analysis Peer Review
+The document mandates writing a hypothesis before each measurement and recording it in docs/gap_analysis.md. You can use the AI as a peer reviewer by providing your hypothesis and asking, "Are there any hardware bottlenecks I forgot to account for before I run this test?"

@@ -1,0 +1,27 @@
+Here is the comprehensive list of upgrades for the RDMA project, combining both standard architectural/network enhancements and the C++26 std::execution (Sender/Receiver) paradigm upgrades into a single blueprint.
+1. Algorithmic & RDMA Verbs Upgrades (Standard)
+These upgrades optimize the data path, network utilization, and algorithm topology within standard libibverbs programming:
+ * Recursive Halving and Doubling: The specification requires a ring topology and a binary tree for comparison. Upgrading to a recursive halving and doubling algorithm (Bruck/2D Mesh) significantly reduces the number of latency steps (\log_2 N) compared to the ring's 2(N-1) steps for medium sizes.
+ * Bidirectional Pipelined Rings: The scatter-reduce phase currently passes chunks in one direction to node (i+1) \pmod N. Upgrading to dual counter-rotating rings maximizes full-duplex network bandwidth.
+ * Vectorized In-Place Accumulation (SIMD/AVX-512): Ring all-reduce requires the receiving node to add incoming chunks to its local data. Upgrading this addition loop to use AVX-512 intrinsics prevents the CPU from becoming the bottleneck at high bandwidths.
+ * Shared Receive Queues (SRQ): Instead of pre-posting individual receive buffers for each queue pair (QP), routing multiple peer QPs to an ibv_srq drastically reduces the registered memory footprint as node counts scale up.
+ * Work Request Batching: The document recommends signaling one send in every N sends to reduce CQ work. This can be upgraded by chaining multiple ibv_send_wr structures into a linked list before calling ibv_post_send once, amortizing the PCIe doorbell overhead.
+ * RDMA Write with Immediate Data: The project contrasts IBV_WR_RDMA_WRITE against IBV_WR_SEND. Upgrading to IBV_WR_RDMA_WRITE_WITH_IMM combines the zero-copy, one-sided DMA performance of writes with an automatic Completion Queue (CQ) notification on the receiving side, eliminating the need to poll memory.
+ * Hugepages for Memory Pools: Registering memory chunks using shared/free_list_pool.h with 2MB/1GB hugepages (MAP_HUGETLB) minimizes kernel page-table translation overhead and TLB misses during network transfers.
+2. C++26 std::execution Upgrades (Architecture)
+Applying the P2300 Sender/Receiver model satisfies all the strict C++ hot-path rules while entirely eliminating manual thread-pinning and callback loops.
+ * rdma::cq_scheduler (Replacing Busy Poll): The project currently uses a manual busy-poll loop to check Completion Queue (CQ) events. Upgrading this with std::execution wraps ibv_post_send into a Sender; a custom cq_scheduler runs the poll loop in the background and automatically pushes a set_value signal down the pipeline when the hardware completes the request.
+ * Pipelined Heterogeneous Chunking (D2): The ring all-reduce scatter phase currently requires sequential receive, add, and send steps. std::execution upgrades this by creating a lock-free pipeline that automatically overlaps network I/O with CPU math across different pinned cores:
+   * rdma_recv_sender \to ex::transfer(cpu_scheduler) \to simd_vector_add \to ex::transfer(rdma_scheduler) \to rdma_send_sender.
+   * Using ex::when_all, you can keep multiple chunks in flight simultaneously.
+ * Straggler Mitigation via Sender Cancellation (D3): The current straggler component detects slow nodes via latency variance and reassigns chunks using a complex TCP side-channel with epoch numbers and start rounds.
+   * The Upgrade: Use ex::stop_when tied to the 20x latency threshold monitor. If a node stalls, it triggers the set_stopped cancellation channel. This immediately aborts the in-flight pipeline without crashing, allowing an ex::let_stopped adaptor to catch the signal and instantly shift work to fast nodes without requiring a global TCP epoch barrier.
+ * Zero-Overhead Hot Path Compliance: The project mandates no exceptions, no virtual calls, and no heap allocation in the timed section. std::execution Senders are compiled as flat, stack-allocated state machines. They handle networking errors via the set_error channel rather than C++ exceptions and use zero type-erased std::function virtual calls.
+3. In-Network Aggregation & eBPF Upgrades (D4)
+If you attempt the in-network aggregation stretch goal:
+ * Multi-Packet Reassembly: The project forces chunk sizes to fit into one MTU because XDP cannot copy a packet. Upgrading the eBPF program to use BPF LRU maps for sequence tracking and multi-packet reassembly allows emulation of realistic, large gradient chunk sizes.
+ * Modern TCX Hooks: For the all-gather phase, the document suggests a TC hook with bpf_clone_redirect. Upgrading to modern TCX ingress/egress hooks provides lower processing latency and a much cleaner libbpf attachment interface.
+ * Stochastic Rounding: The eBPF virtual machine lacks floating-point support, requiring 32-bit fixed-point quantization. Upgrading the quantizer to use stochastic rounding (probabilistic dithering) preserves the accuracy of neural network gradients far better than standard truncation.
+4. Infrastructure & Testing Upgrades
+ * Synthetic Straggler Injection (D3): The project relies on software-injected delays. Upgrading this to use Linux tc-netem (network emulation) for packet delay/jitter or cgroups v2 (cpu.max) provides a physically accurate representation of network congestion and thermal throttling.
+ * Modern C++23 Spans: Ensure the shared memory pools and ring buffers drop raw pointer math in favor of std::span for zero-copy memory window manipulation, fully leveraging the mandated C++23 compiler.
