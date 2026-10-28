@@ -9,6 +9,7 @@
 #include <sys/mman.h>
 #include <unistd.h>
 #include <cstring>
+#include <cerrno>
 
 namespace adder::shared {
 
@@ -83,13 +84,17 @@ public:
         // Register memory region with RDMA Protection Domain
         mr_ = ibv_reg_mr(pd, base_ptr_, total_size_, access_flags);
         if (!mr_) {
+            int err = errno;
             if (use_hugepages_ && base_ptr_ != MAP_FAILED) {
                 munmap(base_ptr_, total_size_);
             } else {
                 free(base_ptr_);
             }
             base_ptr_ = nullptr;
-            return std::unexpected("ibv_reg_mr failed: check ulimit -l (memlock) and permissions");
+            if (err == ENOMEM) {
+                return std::unexpected("ibv_reg_mr failed with ENOMEM. Check 'ulimit -l' and set 'ulimit -l unlimited' or configure /etc/security/limits.conf");
+            }
+            return std::unexpected("ibv_reg_mr failed with errno " + std::to_string(err) + " (" + strerror(err) + ")");
         }
 
         // Populate free-list index stack

@@ -9,6 +9,7 @@
 #include <sys/mman.h>
 #include <unistd.h>
 #include <cstring>
+#include <cerrno>
 
 namespace adder::shared {
 
@@ -63,9 +64,13 @@ public:
         // Register the full range (verbs handles registered ranges with guard pages if driver permits)
         mr_ = ibv_reg_mr(pd, raw_memory_, total_allocation_, access_flags);
         if (!mr_) {
+            int err = errno;
             munmap(raw_memory_, total_allocation_);
             raw_memory_ = nullptr;
-            return std::unexpected("ibv_reg_mr failed on guarded memory region");
+            if (err == ENOMEM) {
+                return std::unexpected("ibv_reg_mr failed with ENOMEM. Check 'ulimit -l' and set 'ulimit -l unlimited' or configure /etc/security/limits.conf");
+            }
+            return std::unexpected("ibv_reg_mr failed with errno " + std::to_string(err) + " (" + strerror(err) + ")");
         }
 
         return {};

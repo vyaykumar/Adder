@@ -1,14 +1,71 @@
 #include "allreduce/verbs_qp.h"
 #include <iostream>
 #include <cstring>
+#include <cerrno>
 
 namespace adder::allreduce {
 
 VerbsQp::~VerbsQp() {
-    if (qp_) ibv_destroy_qp(qp_);
-    if (cq_) ibv_destroy_cq(cq_);
-    if (pd_) ibv_dealloc_pd(pd_);
-    if (ctx_) ibv_close_device(ctx_);
+    destroy();
+}
+
+void VerbsQp::destroy() noexcept {
+    // 1. Destroy Queue Pair
+    if (qp_) {
+        int rc = ibv_destroy_qp(qp_);
+        if (rc != 0) {
+            std::cerr << "[Warning] ibv_destroy_qp failed (rc=" << rc << ")\n";
+        }
+        qp_ = nullptr;
+    }
+
+    // 2. Destroy Completion Queue
+    if (cq_) {
+        int rc = ibv_destroy_cq(cq_);
+        if (rc != 0) {
+            std::cerr << "[Warning] ibv_destroy_cq failed (rc=" << rc << ")\n";
+        }
+        cq_ = nullptr;
+    }
+
+    // 3. Deregister any Address Handles and Memory Regions associated with this PD
+    for (auto* ah : tracked_ahs_) {
+        if (ah) {
+            int rc = ibv_destroy_ah(ah);
+            if (rc != 0) {
+                std::cerr << "[Warning] ibv_destroy_ah failed (rc=" << rc << ")\n";
+            }
+        }
+    }
+    tracked_ahs_.clear();
+
+    for (auto* mr : tracked_mrs_) {
+        if (mr) {
+            int rc = ibv_dereg_mr(mr);
+            if (rc != 0) {
+                std::cerr << "[Warning] ibv_dereg_mr failed (rc=" << rc << ")\n";
+            }
+        }
+    }
+    tracked_mrs_.clear();
+
+    // 4. Deallocate Protection Domain
+    if (pd_) {
+        int rc = ibv_dealloc_pd(pd_);
+        if (rc != 0) {
+            std::cerr << "[Warning] ibv_dealloc_pd failed (rc=" << rc << ", errno=" << errno << "): resource still registered to PD\n";
+        }
+        pd_ = nullptr;
+    }
+
+    // 5. Close device context
+    if (ctx_) {
+        int rc = ibv_close_device(ctx_);
+        if (rc != 0) {
+            std::cerr << "[Warning] ibv_close_device failed (rc=" << rc << ")\n";
+        }
+        ctx_ = nullptr;
+    }
 }
 
 VerbsQp::VerbsQp(VerbsQp&& other) noexcept {
@@ -16,6 +73,8 @@ VerbsQp::VerbsQp(VerbsQp&& other) noexcept {
     pd_ = other.pd_; other.pd_ = nullptr;
     cq_ = other.cq_; other.cq_ = nullptr;
     qp_ = other.qp_; other.qp_ = nullptr;
+    tracked_mrs_ = std::move(other.tracked_mrs_);
+    tracked_ahs_ = std::move(other.tracked_ahs_);
     ib_port_ = other.ib_port_;
     local_lid_ = other.local_lid_;
     local_gid_ = other.local_gid_;
@@ -24,15 +83,14 @@ VerbsQp::VerbsQp(VerbsQp&& other) noexcept {
 
 VerbsQp& VerbsQp::operator=(VerbsQp&& other) noexcept {
     if (this != &other) {
-        if (qp_) ibv_destroy_qp(qp_);
-        if (cq_) ibv_destroy_cq(cq_);
-        if (pd_) ibv_dealloc_pd(pd_);
-        if (ctx_) ibv_close_device(ctx_);
+        destroy();
 
         ctx_ = other.ctx_; other.ctx_ = nullptr;
         pd_ = other.pd_; other.pd_ = nullptr;
         cq_ = other.cq_; other.cq_ = nullptr;
         qp_ = other.qp_; other.qp_ = nullptr;
+        tracked_mrs_ = std::move(other.tracked_mrs_);
+        tracked_ahs_ = std::move(other.tracked_ahs_);
         ib_port_ = other.ib_port_;
         local_lid_ = other.local_lid_;
         local_gid_ = other.local_gid_;

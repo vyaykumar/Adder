@@ -16,22 +16,24 @@ set(CMAKE_C_STANDARD 23)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 
-# Enable aggressive compiler optimizations while retaining debug symbols
+# Enable compiler warnings; configure optimization flags per build configuration
+# so Debug builds retain unoptimized -O0 -g3 for GDB inspection without being clobbered by -O3.
 add_compile_options(
     -Wall
     -Wextra
     -Wpedantic
     -Wconversion
     -Wshadow
-    -O3
-    -g
+    $<$<CONFIG:Release>:-O3>
+    $<$<CONFIG:RelWithDebInfo>:-O3 -g>
+    $<$<CONFIG:Debug>:-O0 -g3>
 )
 
 # Check for architecture-native optimizations if supported
 include(CheckCXXCompilerFlag)
 check_cxx_compiler_flag("-march=native" COMPILER_SUPPORTS_MARCH_NATIVE)
 if(COMPILER_SUPPORTS_MARCH_NATIVE)
-    add_compile_options("-march=native")
+    add_compile_options($<$<NOT:$<CONFIG:Debug>>:-march=native>)
 endif()
 
 # -----------------------------------------------------------------------------
@@ -39,7 +41,12 @@ endif()
 # -----------------------------------------------------------------------------
 find_package(Threads REQUIRED)
 
-find_library(IBVERBS_LIB NAMES ibverbs rdmacm REQUIRED)
+# Priority 1.1: Multi-Name Resolution Bug Fix
+# find_library with multiple names stops after locating the first match.
+# Explicitly resolve both libibverbs and librdmacm so RDMA CM symbols link properly.
+find_library(LIBIBVERBS_LIB NAMES ibverbs REQUIRED)
+find_library(LIBRDMACM_LIB NAMES rdmacm REQUIRED)
+set(RDMA_LIBRARIES ${LIBIBVERBS_LIB} ${LIBRDMACM_LIB})
 find_path(IBVERBS_INCLUDE_DIR NAMES infiniband/verbs.h REQUIRED)
 
 # Optional MPI support for comparative benchmarking
@@ -90,20 +97,26 @@ target_include_directories(adder_shared INTERFACE
 )
 target_link_libraries(adder_shared INTERFACE
     Threads::Threads
-    ${IBVERBS_LIB}
+    ${RDMA_LIBRARIES}
 )
 
-# Precompile common heavy hot-path headers for fast build iteration
+# Priority 1.2: Guard C++ headers with generator expressions
+# Prevents pure C targets (agg_userspace.c, agg_control.c) from failing when PCH is applied.
 target_precompile_headers(adder_shared INTERFACE
-    <infiniband/verbs.h>
-    <expected>
-    <span>
-    <chrono>
-    <atomic>
-    <memory>
-    <vector>
-    <string>
-    <string_view>
+    $<$<COMPILE_LANGUAGE:CXX>:
+        <infiniband/verbs.h>
+        <expected>
+        <span>
+        <chrono>
+        <atomic>
+        <memory>
+        <vector>
+        <string>
+        <string_view>
+    >
+    $<$<COMPILE_LANGUAGE:C>:
+        <infiniband/verbs.h>
+    >
 )
 
 # -----------------------------------------------------------------------------
@@ -173,6 +186,20 @@ target_link_libraries(agg_userspace PRIVATE Threads::Threads)
 if(CLANG_BPF_COMPILER AND LIBBPF_LIB AND LIBBPF_INCLUDE_DIR)
     message(STATUS "Clang BPF compiler and libbpf found. Enabling eBPF XDP target.")
 
+    # Priority 1.4: Multiarch architecture headers detection for eBPF target
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+        set(HOST_ARCH "x86_64")
+    elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
+        set(HOST_ARCH "aarch64")
+    else()
+        set(HOST_ARCH "${CMAKE_SYSTEM_PROCESSOR}")
+    endif()
+
+    set(BPF_EXTRA_INCLUDES "")
+    if(EXISTS "/usr/include/${HOST_ARCH}-linux-gnu")
+        set(BPF_EXTRA_INCLUDES "-I/usr/include/${HOST_ARCH}-linux-gnu")
+    endif()
+
     set(BPF_C_SRC "${CMAKE_CURRENT_SOURCE_DIR}/innet_agg/xdp_agg.bpf.c")
     set(BPF_OBJ "${CMAKE_CURRENT_BINARY_DIR}/xdp_agg.bpf.o")
 
@@ -181,9 +208,10 @@ if(CLANG_BPF_COMPILER AND LIBBPF_LIB AND LIBBPF_INCLUDE_DIR)
         COMMAND ${CLANG_BPF_COMPILER} -target bpf -O2 -std=gnu11 -g
                 -I${LIBBPF_INCLUDE_DIR}
                 -I${CMAKE_CURRENT_SOURCE_DIR}
+                ${BPF_EXTRA_INCLUDES}
                 -c ${BPF_C_SRC} -o ${BPF_OBJ}
         DEPENDS ${BPF_C_SRC}
-        COMMENT "Compiling eBPF program: ${BPF_C_SRC} -> ${BPF_OBJ}"
+        COMMENT "Compiling eBPF program: ${BPF_C_SRC} -> ${BPF_OBJ} (with arch ${HOST_ARCH})"
     )
 
     add_custom_target(ebpf_prog ALL DEPENDS ${BPF_OBJ})

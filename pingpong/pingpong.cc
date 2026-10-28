@@ -8,6 +8,7 @@
 #include <cerrno>
 #include <expected>
 #include <algorithm>
+#include <cassert>
 
 // Network socket headers for out-of-band QP parameter exchange
 #include <sys/types.h>
@@ -36,7 +37,7 @@ struct PingPongConfig {
     uint16_t tcp_port{18515};
     std::string device_name{""};
     uint8_t ib_port{1};
-    int g_index{0};
+    int g_index{1}; // Priority 2.3: Default to GID index 1 (RoCEv2 / IPv4) for Soft-RoCE (rxe)
     std::string transport{"rc"}; // "rc" or "ud"
     size_t message_size{64};
     size_t iterations{100'000};
@@ -67,6 +68,35 @@ size_t mtu_to_bytes(enum ibv_mtu mtu) {
         case IBV_MTU_4096: return 4096;
         default:           return 1024;
     }
+}
+
+// Priority 2.1: Robust streaming helpers to prevent TCP fragmentation bugs
+inline bool write_exact(int fd, const void* buf, size_t len) {
+    const char* p = static_cast<const char*>(buf);
+    while (len > 0) {
+        ssize_t n = write(fd, p, len);
+        if (n <= 0) {
+            if (errno == EINTR) continue;
+            return false;
+        }
+        p += n;
+        len -= static_cast<size_t>(n);
+    }
+    return true;
+}
+
+inline bool read_exact(int fd, void* buf, size_t len) {
+    char* p = static_cast<char*>(buf);
+    while (len > 0) {
+        ssize_t n = read(fd, p, len);
+        if (n <= 0) {
+            if (errno == EINTR) continue;
+            return false;
+        }
+        p += n;
+        len -= static_cast<size_t>(n);
+    }
+    return true;
 }
 
 // TCP Out-of-band side channel to exchange QPN, LID/GID, and PSN
@@ -103,6 +133,7 @@ std::expected<QpExchangeInfo, std::string> exchange_qp_info(
 
         struct sockaddr_in serv_addr{};
         serv_addr.sin_family = AF_INET;
+        serv_addr.sin_addr.s_addr = INADDR_ANY;
         serv_addr.sin_port = htons(cfg.tcp_port);
         if (inet_pton(AF_INET, cfg.server_ip.c_str(), &serv_addr.sin_addr) <= 0) {
             close(sock_fd);
@@ -120,15 +151,15 @@ std::expected<QpExchangeInfo, std::string> exchange_qp_info(
         }
     }
 
-    // Send local QP information
-    if (write(sock_fd, &local_info, sizeof(local_info)) != sizeof(local_info)) {
+    // Send local QP information using write_exact
+    if (!write_exact(sock_fd, &local_info, sizeof(local_info))) {
         close(sock_fd);
         return std::unexpected("TCP write of local QpExchangeInfo failed");
     }
 
-    // Read peer QP information
+    // Read peer QP information using read_exact
     QpExchangeInfo remote_info{};
-    if (read(sock_fd, &remote_info, sizeof(remote_info)) != sizeof(remote_info)) {
+    if (!read_exact(sock_fd, &remote_info, sizeof(remote_info))) {
         close(sock_fd);
         return std::unexpected("TCP read of remote QpExchangeInfo failed");
     }
@@ -145,7 +176,7 @@ void print_usage(const char* prog) {
               << "  --port <port>          TCP side-channel exchange port (default: 18515)\n"
               << "  --device <dev>         RDMA device name (e.g. rxe0, mlx5_0)\n"
               << "  --ib-port <num>        InfiniBand port number (default: 1)\n"
-              << "  --gid-idx <idx>        GID table index (default: 0)\n"
+              << "  --gid-idx <idx>        GID table index (default: 1 for RoCEv2/IPv4)\n"
               << "  --transport <rc|ud>    Transport type (default: rc)\n"
               << "  --size <bytes>         Message size in bytes (default: 64)\n"
               << "  --iters <count>        Number of timed iterations (default: 100000)\n"
@@ -217,6 +248,7 @@ int main(int argc, char* argv[]) {
               << " Mode:       " << (cfg.use_rdma_write ? "One-Sided (RDMA_WRITE)" : "Two-Sided (SEND/RECV)") << "\n"
               << " Inline:     " << (cfg.use_inline ? "Enabled" : "Disabled") << "\n"
               << " Iterations: " << cfg.iterations << " (warmup: " << cfg.warmup_iterations << ")\n"
+              << " GID Index:  " << cfg.g_index << "\n"
               << "=========================================================\n";
 
     // =========================================================================
@@ -232,23 +264,47 @@ int main(int argc, char* argv[]) {
     // Step 2: Query Port and Allocate Protection Domain (ibv_alloc_pd)
     // =========================================================================
     // TODO: Step 2: Query port attributes with ibv_query_port() to verify PORT_ACTIVE
-    // and retrieve the active_mtu. For UD transport, ensure cfg.message_size <= mtu_to_bytes(port_attr.active_mtu).
-    // Allocate protection domain using ibv_alloc_pd(ib_ctx).
+    // and retrieve the active_mtu.
+    // Priority 2.2: For UD transport, ensure cfg.message_size <= mtu_to_bytes(port_attr.active_mtu).
     struct ibv_pd* pd = nullptr;
     size_t active_mtu_bytes = 1024;
     std::cout << "// TODO: Step 2: Query port active_mtu and allocate PD (ibv_alloc_pd)\n";
 
+    // Validate UD message size against active MTU
+    if (cfg.transport == "ud" && cfg.message_size > active_mtu_bytes) {
+        std::cerr << "[Error] UD message size (" << cfg.message_size
+                  << " B) exceeds active MTU (" << active_mtu_bytes
+                  << " B). Set interface MTU to 9000 or reduce message size.\n";
+        return 1;
+    }
+
     // =========================================================================
     // Step 3: Register Memory Region (ibv_reg_mr)
     // =========================================================================
-    // TODO: Step 3: Allocate send and receive buffers.
-    // CRITICAL UD RULE: For UD receives, allocate (cfg.message_size + 40) bytes
-    // to accommodate the 40-byte Global Routing Header (GRH).
-    // Register the buffer with ibv_reg_mr() using flags:
-    // IBV_ACCESS_LOCAL_WRITE | (cfg.use_rdma_write ? IBV_ACCESS_REMOTE_WRITE : 0)
+    // Priority 2.2: For UD receives, the HCA writes a 40-byte Global Routing Header (GRH)
+    // before the payload. Therefore:
+    // - UD receive buffer must be allocated as (cfg.message_size + kUdGrhOffset) bytes.
+    // - The posted recv SGE length must be (cfg.message_size + kUdGrhOffset) starting at buf.
+    // - The actual application payload pointer starts at (buf + kUdGrhOffset).
+    // Priority 6.2: Check for ENOMEM and provide actionable diagnostic for RLIMIT_MEMLOCK.
     struct ibv_mr* mr = nullptr;
+    size_t alloc_size = (cfg.transport == "ud") ? (cfg.message_size + kUdGrhOffset) : cfg.message_size;
     uint8_t* buf = nullptr;
-    std::cout << "// TODO: Step 3: Register memory buffer (account for 40-byte GRH offset on UD)\n";
+    std::cout << "// TODO: Step 3: Register memory buffer (" << alloc_size << " bytes, accounting for 40-byte GRH on UD)\n";
+
+    if (pd) {
+        // If PD was allocated, check registration and handle ENOMEM diagnostic
+        int access_flags = IBV_ACCESS_LOCAL_WRITE | (cfg.use_rdma_write ? IBV_ACCESS_REMOTE_WRITE : 0);
+        mr = ibv_reg_mr(pd, buf, alloc_size, access_flags);
+        if (!mr) {
+            if (errno == ENOMEM) {
+                std::cerr << "[Error] ibv_reg_mr failed with ENOMEM. Check 'ulimit -l' and set 'ulimit -l unlimited' or configure /etc/security/limits.conf\n";
+            } else {
+                std::cerr << "[Error] ibv_reg_mr failed with errno " << errno << " (" << strerror(errno) << ")\n";
+            }
+            return 1;
+        }
+    }
 
     // =========================================================================
     // Step 4: Create Completion Queue (ibv_create_cq)

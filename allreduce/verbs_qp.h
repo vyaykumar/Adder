@@ -29,6 +29,9 @@ public:
     VerbsQp(VerbsQp&& other) noexcept;
     VerbsQp& operator=(VerbsQp&& other) noexcept;
 
+    // Explicit destruction method
+    void destroy() noexcept;
+
     // Initializes the device, PD, CQ, and QP
     std::expected<void, std::string> init(
         std::string_view dev_name,
@@ -56,6 +59,10 @@ public:
         uint8_t rnr_retry = 7
     );
 
+    // Track resources associated with this PD so they are safely destroyed before ibv_dealloc_pd
+    void track_mr(struct ibv_mr* mr) { if (mr) tracked_mrs_.push_back(mr); }
+    void track_ah(struct ibv_ah* ah) { if (ah) tracked_ahs_.push_back(ah); }
+
     // Getters for local connection negotiation
     QpConnectionParams get_local_params() const;
 
@@ -70,6 +77,8 @@ private:
     struct ibv_pd* pd_{nullptr};
     struct ibv_cq* cq_{nullptr};
     struct ibv_qp* qp_{nullptr};
+    std::vector<struct ibv_mr*> tracked_mrs_;
+    std::vector<struct ibv_ah*> tracked_ahs_;
     uint8_t ib_port_{1};
     uint16_t local_lid_{0};
     union ibv_gid local_gid_{};

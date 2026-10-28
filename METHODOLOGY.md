@@ -31,6 +31,31 @@ RDMA memory registration (`ibv_reg_mr`) pins physical pages in RAM. Insufficient
 ulimit -l unlimited
 ```
 
+### 1.4 Soft-RoCE Loopback Bypass & Network Namespaces
+When running client and server on the same Soft-RoCE device (`rxe0`) within the default network namespace, the kernel driver bypasses `dev_queue_xmit` entirely via `rxe_loopback()`. Consequently, packet capturing (`tcpdump`) observes 0 packets, and `tc qdisc netem delay` will not delay any traffic.
+- **Rule for Netem / Network Delay Testing**: Injected network delays (D3) and packet sniffing/eBPF verification (D4) must execute across two distinct network namespaces connected via a `veth` pair:
+```bash
+# Setup isolated network namespaces with veth pair
+sudo ip netns add ns_server
+sudo ip netns add ns_client
+sudo ip link add veth_srv type veth peer name veth_cli
+sudo ip link set veth_srv netns ns_server
+sudo ip link set veth_cli netns ns_client
+
+# Configure IP addresses
+sudo ip netns exec ns_server ip addr add 192.168.100.1/24 dev veth_srv
+sudo ip netns exec ns_server ip link set veth_srv up
+sudo ip netns exec ns_client ip addr add 192.168.100.2/24 dev veth_cli
+sudo ip netns exec ns_client ip link set veth_cli up
+
+# Attach Soft-RoCE links to veth interfaces
+sudo ip netns exec ns_server rdma link add rxe_srv type rxe netdev veth_srv
+sudo ip netns exec ns_client rdma link add rxe_cli type rxe netdev veth_cli
+
+# Inject tc-netem delay on client veth
+sudo ip netns exec ns_client tc qdisc add dev veth_cli root netem delay 500us
+```
+
 ---
 
 ## 2. Timing Harness & HDR Histograms

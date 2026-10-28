@@ -5,7 +5,8 @@ Evaluate the detection accuracy and tail-latency mitigation performance of the a
 
 ## Injected Perturbations
 1. **Software Spin/Sleep Delay**: 200μs, 500μs, 1000μs, 2000μs delays injected on Rank 2.
-2. **Detection Sensitivity Sweep**: Vary $\alpha$ (EMA smoothing factor) from $0.1$ to $0.5$ and $\sigma$ threshold from $1.5$ to $3.0$.
+2. **Kernel Network Emulation (tc-netem)**: When using packet-level network delay instead of software busy-sleep, tests must execute across two network namespaces (`veth_srv` <-> `veth_cli`) to bypass the kernel's internal `rxe_loopback()` fast path.
+3. **Detection Sensitivity Sweep**: Vary $\alpha$ (EMA smoothing factor) from $0.1$ to $0.5$ and $\sigma$ threshold from $1.5$ to $3.0$.
 
 ## Experimental Results Summary
 
