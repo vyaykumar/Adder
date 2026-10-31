@@ -15,34 +15,53 @@ TARGET_IP="${2:-}"
 RESULTS_DIR="results"
 mkdir -p "$RESULTS_DIR"
 
+# Dynamically select valid cores based on available CPU count
+NUM_CPUS=$(nproc)
+if [ "$NUM_CPUS" -ge 6 ]; then
+    # On 6+ core machines (e.g. 12th Gen Intel laptop), use E-cores 4 & 5
+    CORE_SRV=4
+    CORE_CLI=5
+elif [ "$NUM_CPUS" -ge 4 ]; then
+    CORE_SRV=2
+    CORE_CLI=3
+elif [ "$NUM_CPUS" -ge 2 ]; then
+    CORE_SRV=0
+    CORE_CLI=1
+else
+    CORE_SRV=0
+    CORE_CLI=0
+fi
+
+echo "[Topology] Detected $NUM_CPUS CPUs. Selected Core $CORE_SRV (Server) and Core $CORE_CLI (Client)."
+
 case "$MODE" in
     loopback)
-        echo "=== Running Local Soft-RoCE Loopback Baselines (Cores 4 & 5) ==="
+        echo "=== Running Local Soft-RoCE Loopback Baselines (Cores $CORE_SRV & $CORE_CLI) ==="
         
         # 1. ib_send_lat sweep
         echo "[1/3] Measuring ib_send_lat (two-sided send)..."
-        taskset -c 4 ib_send_lat -d rxe0 -i 1 -x 1 -F >/dev/null 2>&1 &
+        taskset -c "$CORE_SRV" ib_send_lat -d rxe0 -i 1 -x 1 -F >/dev/null 2>&1 &
         SRV_PID=$!
         sleep 1
-        taskset -c 5 ib_send_lat -d rxe0 -i 1 -x 1 -F -a 127.0.0.1 > "$RESULTS_DIR/baseline_loopback_send_lat.txt"
+        taskset -c "$CORE_CLI" ib_send_lat -d rxe0 -i 1 -x 1 -F -a 127.0.0.1 > "$RESULTS_DIR/baseline_loopback_send_lat.txt"
         wait $SRV_PID || true
         echo "      Saved to $RESULTS_DIR/baseline_loopback_send_lat.txt"
 
         # 2. ib_write_lat sweep
         echo "[2/3] Measuring ib_write_lat (one-sided write)..."
-        taskset -c 4 ib_write_lat -d rxe0 -i 1 -x 1 -F >/dev/null 2>&1 &
+        taskset -c "$CORE_SRV" ib_write_lat -d rxe0 -i 1 -x 1 -F >/dev/null 2>&1 &
         SRV_PID=$!
         sleep 1
-        taskset -c 5 ib_write_lat -d rxe0 -i 1 -x 1 -F -a 127.0.0.1 > "$RESULTS_DIR/baseline_loopback_write_lat.txt"
+        taskset -c "$CORE_CLI" ib_write_lat -d rxe0 -i 1 -x 1 -F -a 127.0.0.1 > "$RESULTS_DIR/baseline_loopback_write_lat.txt"
         wait $SRV_PID || true
         echo "      Saved to $RESULTS_DIR/baseline_loopback_write_lat.txt"
 
         # 3. ib_send_bw sweep
         echo "[3/3] Measuring ib_send_bw (bandwidth)..."
-        taskset -c 4 ib_send_bw -d rxe0 -i 1 -x 1 -F >/dev/null 2>&1 &
+        taskset -c "$CORE_SRV" ib_send_bw -d rxe0 -i 1 -x 1 -F >/dev/null 2>&1 &
         SRV_PID=$!
         sleep 1
-        taskset -c 5 ib_send_bw -d rxe0 -i 1 -x 1 -F -a 127.0.0.1 > "$RESULTS_DIR/baseline_loopback_send_bw.txt"
+        taskset -c "$CORE_CLI" ib_send_bw -d rxe0 -i 1 -x 1 -F -a 127.0.0.1 > "$RESULTS_DIR/baseline_loopback_send_bw.txt"
         wait $SRV_PID || true
         echo "      Saved to $RESULTS_DIR/baseline_loopback_send_bw.txt"
 
@@ -50,9 +69,10 @@ case "$MODE" in
         ;;
 
     server)
-        echo "=== Starting perftest Server on Core 1 (Waiting for Client) ==="
+        SINGLE_CORE=$((NUM_CPUS > 1 ? 1 : 0))
+        echo "=== Starting perftest Server on Core $SINGLE_CORE (Waiting for Client) ==="
         echo "Run './scripts/run_baselines.sh client <THIS_IP>' on the client machine."
-        taskset -c 1 ib_send_lat -d rxe0 -i 1 -x 1 -F
+        taskset -c "$SINGLE_CORE" ib_send_lat -d rxe0 -i 1 -x 1 -F
         ;;
 
     client)
@@ -60,8 +80,9 @@ case "$MODE" in
             echo "Usage: ./scripts/run_baselines.sh client <SERVER_IP>"
             exit 1
         fi
-        echo "=== Running Cross-Host Ethernet Baseline against $TARGET_IP ==="
-        taskset -c 1 ib_send_lat -d rxe0 -i 1 -x 1 -F -a "$TARGET_IP" | tee "$RESULTS_DIR/baseline_ethernet_send_lat.txt"
+        SINGLE_CORE=$((NUM_CPUS > 1 ? 1 : 0))
+        echo "=== Running Cross-Host Ethernet Baseline against $TARGET_IP on Core $SINGLE_CORE ==="
+        taskset -c "$SINGLE_CORE" ib_send_lat -d rxe0 -i 1 -x 1 -F -a "$TARGET_IP" | tee "$RESULTS_DIR/baseline_ethernet_send_lat.txt"
         echo "      Saved to $RESULTS_DIR/baseline_ethernet_send_lat.txt"
         ;;
 
