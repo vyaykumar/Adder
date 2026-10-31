@@ -24,15 +24,15 @@ Use this document to record the exact hardware and environment details of each m
 
 ## Machine Profile 2: Physical Homelab Node (Debian 12)
 - **Target Type**: Bare-Metal Physical Homelab Server
-- **Operating System / Kernel**: Debian 12 (Bookworm) / Linux Kernel 6.1+
-- **CPU Model**: [Fill in Debian Host CPU, e.g. Intel / AMD]
-- **Cores / Threads**: [Fill in core/thread count]
-- **RAM**: [Fill in RAM]
-- **Network Interconnect**: Dedicated Ethernet link (1GbE / 2.5GbE / 10GbE)
-- **RDMA Device**: `rxe0` (Soft-RoCE bound to physical Ethernet netdev)
-- **Active MTU**: 
-  - Default: 1024 bytes (with interface MTU 1500)
-  - Jumbo Frames: 4096 bytes (with interface MTU 9000)
+- **Operating System / Kernel**: Debian 12 (Bookworm) / `Linux homelab 6.1.0-48-amd64 #1 SMP PREEMPT_DYNAMIC Debian 6.1.172-1 (2026-05-15) x86_64`
+- **CPU Model**: AMD A9-9425 RADEON R5, 5 COMPUTE CORES 2C+3G (Stoney Ridge)
+- **Cores / Threads**: 2 Cores / 2 Threads (Single-socket, 1 thread/core, NUMA node 0: CPUs 0,1)
+- **RAM**: 3.7 GiB total (DDR4)
+- **Network Interconnect**: Realtek/Broadcom Ethernet link (1GbE)
+- **RDMA Device**: `rxe0` (Soft-RoCE bound to physical netdev, node_guid: `dad0:90ff:fe52:5234`)
+- **Port State**: `PORT_ACTIVE (4)`, link_layer: `Ethernet`
+- **Active MTU**: 1024 bytes (max_mtu 4096, constrained by standard 1500B Ethernet frame)
+- **RoCEv2 GID**: `::ffff:192.168.137.2` (GID Table Index 1)
 - **CPU Scaling Governor**: `performance`
 - **Locked Memory Limit (`ulimit -l`)**: `unlimited`
 

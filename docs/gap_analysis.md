@@ -43,11 +43,30 @@ The core discipline of this project is hypothesis-driven engineering. Before exe
    - Once implemented, our custom `pingpong` tool must track within $\le 20\%$ of these recorded `ib_send_lat` baselines on the same hardware.
 
 #### 2. Experimental Result
-- **Loopback Baseline**: [Record from `results/baseline_loopback_send_lat.txt`]
-- **Ethernet Baseline**: [Record from `results/baseline_ethernet_send_lat.txt`]
+- **Debian Homelab Loopback Baseline** (`results/baseline_loopback_send_lat.txt`):
+  - **Transport**: RC over `rxe0`, GID index 1 (`::ffff:192.168.137.2`), MTU 1024B.
+  - **Small-Message Latency (64B)**:
+    - $t_{\text{min}} = 2.95\ \mu\text{s}$
+    - $t_{\text{typical}} = 3.11\ \mu\text{s}$ ($P_{50}$ ground-truth target)
+    - $t_{\text{avg}} = 3.21\ \mu\text{s}$
+    - $P_{99} = 3.60\ \mu\text{s}$
+    - $P_{99.9} = 22.43\ \mu\text{s}$
+  - **MTU Inflection Point (1024B)**:
+    - 1024B: $t_{\text{typical}} = 3.72\ \mu\text{s}$
+    - 2048B (2 packets): $t_{\text{typical}} = 6.15\ \mu\text{s}$ ($1.65\times$ jump due to 2nd segment)
+    - 4096B (4 packets): $t_{\text{typical}} = 9.99\ \mu\text{s}$
+  - **Large-Message Bandwidth Saturation (1MB - 8MB)**:
+    - 1MB: $t_{\text{typical}} = 2541.57\ \mu\text{s}$ ($\sim 2.54\text{ ms}$, bandwidth $\approx 412\text{ MB/s}$)
+    - 8MB: $t_{\text{typical}} = 22440.85\ \mu\text{s}$ ($\sim 22.44\text{ ms}$, bandwidth $\approx 373\text{ MB/s}$)
+  - **Tail Latency Anomalies**:
+    - At 256B and 512B, observed transient $t_{\text{max}} \ge 660\ \mu\text{s}$ ($>200\times$ typical), proving kernel worker scheduling jitter under `PREEMPT_DYNAMIC`.
 
 #### 3. Gap Analysis & Root Cause
-- [Pending run comparison]
+- **Hypothesis vs. Result**:
+  - The hypothesis predicted small-message latency of $10\text{--}18\ \mu\text{s}$ on general Soft-RoCE. The observed $3.11\ \mu\text{s}$ on the AMD A9 dual-core bare-metal CPU was significantly lower because both sender and receiver ran on Cores 0 and 1 with direct shared memory short-circuiting in `rxe_loopback()` without virtual machine hypervisor overhead.
+  - **Official Target for D1 `pingpong.cc`**:
+    At 64B on the Debian homelab, our custom implementation must achieve $P_{50} \le 3.11 \times 1.20 = \mathbf{3.73\ \mu s}$.
+- **Cross-Host Ethernet Baseline**: [Pending cross-cable run]
 
 ---
 

@@ -36,32 +36,43 @@ echo "[Topology] Detected $NUM_CPUS CPUs. Selected Core $CORE_SRV (Server) and C
 
 case "$MODE" in
     loopback)
-        echo "=== Running Local Soft-RoCE Loopback Baselines (Cores $CORE_SRV & $CORE_CLI) ==="
+        # Find the actual IP bound to the interface hosting rxe0 (e.g. 192.168.137.2)
+        LOCAL_IP=$(ip -o -4 route show to default 2>/dev/null | awk '{print $5}' | xargs -I{} ip -o -4 addr show {} 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -n1)
+        if [ -z "$LOCAL_IP" ]; then
+            LOCAL_IP=$(hostname -I | awk '{print $1}')
+        fi
+        [ -z "$LOCAL_IP" ] && LOCAL_IP="127.0.0.1"
+
+        echo "=== Running Local Soft-RoCE Loopback Baselines (Cores $CORE_SRV & $CORE_CLI on $LOCAL_IP) ==="
         
-        # 1. ib_send_lat sweep
+        # Kill any lingering perftest processes
+        killall ib_send_lat ib_write_lat ib_send_bw 2>/dev/null || true
+        sleep 1
+
+        # 1. ib_send_lat sweep (Both server and client MUST have -a)
         echo "[1/3] Measuring ib_send_lat (two-sided send)..."
-        taskset -c "$CORE_SRV" ib_send_lat -d rxe0 -i 1 -x 1 -F >/dev/null 2>&1 &
+        taskset -c "$CORE_SRV" ib_send_lat -d rxe0 -i 1 -x 1 -F -a >/dev/null 2>&1 &
         SRV_PID=$!
         sleep 1
-        taskset -c "$CORE_CLI" ib_send_lat -d rxe0 -i 1 -x 1 -F -a 127.0.0.1 > "$RESULTS_DIR/baseline_loopback_send_lat.txt"
+        taskset -c "$CORE_CLI" ib_send_lat -d rxe0 -i 1 -x 1 -F -a "$LOCAL_IP" > "$RESULTS_DIR/baseline_loopback_send_lat.txt"
         wait $SRV_PID || true
         echo "      Saved to $RESULTS_DIR/baseline_loopback_send_lat.txt"
 
-        # 2. ib_write_lat sweep
+        # 2. ib_write_lat sweep (Both server and client MUST have -a)
         echo "[2/3] Measuring ib_write_lat (one-sided write)..."
-        taskset -c "$CORE_SRV" ib_write_lat -d rxe0 -i 1 -x 1 -F >/dev/null 2>&1 &
+        taskset -c "$CORE_SRV" ib_write_lat -d rxe0 -i 1 -x 1 -F -a >/dev/null 2>&1 &
         SRV_PID=$!
         sleep 1
-        taskset -c "$CORE_CLI" ib_write_lat -d rxe0 -i 1 -x 1 -F -a 127.0.0.1 > "$RESULTS_DIR/baseline_loopback_write_lat.txt"
+        taskset -c "$CORE_CLI" ib_write_lat -d rxe0 -i 1 -x 1 -F -a "$LOCAL_IP" > "$RESULTS_DIR/baseline_loopback_write_lat.txt"
         wait $SRV_PID || true
         echo "      Saved to $RESULTS_DIR/baseline_loopback_write_lat.txt"
 
-        # 3. ib_send_bw sweep
+        # 3. ib_send_bw sweep (Both server and client MUST have -a)
         echo "[3/3] Measuring ib_send_bw (bandwidth)..."
-        taskset -c "$CORE_SRV" ib_send_bw -d rxe0 -i 1 -x 1 -F >/dev/null 2>&1 &
+        taskset -c "$CORE_SRV" ib_send_bw -d rxe0 -i 1 -x 1 -F -a >/dev/null 2>&1 &
         SRV_PID=$!
         sleep 1
-        taskset -c "$CORE_CLI" ib_send_bw -d rxe0 -i 1 -x 1 -F -a 127.0.0.1 > "$RESULTS_DIR/baseline_loopback_send_bw.txt"
+        taskset -c "$CORE_CLI" ib_send_bw -d rxe0 -i 1 -x 1 -F -a "$LOCAL_IP" > "$RESULTS_DIR/baseline_loopback_send_bw.txt"
         wait $SRV_PID || true
         echo "      Saved to $RESULTS_DIR/baseline_loopback_send_bw.txt"
 
@@ -72,7 +83,7 @@ case "$MODE" in
         SINGLE_CORE=$((NUM_CPUS > 1 ? 1 : 0))
         echo "=== Starting perftest Server on Core $SINGLE_CORE (Waiting for Client) ==="
         echo "Run './scripts/run_baselines.sh client <THIS_IP>' on the client machine."
-        taskset -c "$SINGLE_CORE" ib_send_lat -d rxe0 -i 1 -x 1 -F
+        taskset -c "$SINGLE_CORE" ib_send_lat -d rxe0 -i 1 -x 1 -F -a
         ;;
 
     client)
