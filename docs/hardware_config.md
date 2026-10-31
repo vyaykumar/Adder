@@ -4,8 +4,8 @@ Use this document to record the exact hardware and environment details of each m
 
 ---
 
-## Machine Profile 1: Initial Local Testbed (Heterogeneous Laptop)
-- **Target Type**: Local Bare-Metal / Native Linux (or VM)
+## Machine Profile 1: Initial Local Testbed (VijayKumar Laptop)
+- **Target Type**: Windows 11 Host + CLion Linux Toolchain (Intel Core i3-1220P)
 - **CPU Model**: 12th Gen Intel Core i3-1220P (Alder Lake)
 - **Cores / Threads**: 10 Cores / 12 Threads
 - **Topology**: 
@@ -13,11 +13,8 @@ Use this document to record the exact hardware and environment details of each m
   - 8 Gracemont Efficiency Cores (E-cores): Cores 2–9 (Single-threaded, 2 clusters of 4 sharing L2)
   - *Benchmark Pinning Rule*: Pin all $N=4$ runs to homogeneous E-cores (e.g., Cores 4, 5, 6, 7) to eliminate artificial $2\times$ hardware stragglers.
 - **RAM**: 16 GB DDR4/DDR5
-- **Operating System / Kernel**: Linux (e.g. 6.8.0-generic)
-- **RDMA Device**: `rxe0` (Soft-RoCE over loopback / local netdev)
-- **Active MTU**: 1024 bytes (standard 1500B Ethernet ceiling)
-- **CPU Scaling Governor**: `performance`
-- **Turbo State**: `disabled` (via `/sys/devices/system/cpu/intel_pstate/no_turbo`)
+- **Network Interconnect**: USB-C Multiport Hub with Gigabit Ethernet (xHCI Host Controller)
+- **Network Topology**: Windows Internet Connection Sharing (ICS) gateway (`192.168.137.1`), bridging Wi-Fi to physical Ethernet.
 - **Compiler**: GCC 14.1 / Clang 18.1 (`-std=c++23 -O3 -march=native`)
 
 ---
