@@ -25,25 +25,26 @@ The core discipline of this project is hypothesis-driven engineering. Before exe
 
 ## Log Entries
 
-### Entry 000: Perftest Baseline — Loopback vs. Physical Ethernet (D1.1)
+### Entry 000: Perftest Baseline — Loopback vs. Cloud Distributed (D1.1)
 - **Date**: 2026-10-31
-- **Hardware Config**: Machine Profile 1 (Intel i3-1220P) + Machine Profile 2 (Debian 12 Homelab)
-- **Goal**: Establish the empirical ground truth for `ib_send_lat`, `ib_write_lat`, and `ib_send_bw` across both Single-Host Loopback and Cross-Host Physical Ethernet before writing `pingpong.cc`.
+- **Hardware Config**: Machine Profile 2 (Debian 12 Bare-Metal) + Machine Profile 3 (Azure Linux VM)
+- **Goal**: Establish the empirical ground truth for `ib_send_lat`, `ib_write_lat`, and `ib_send_bw` across Standalone Bare-Metal Loopback and Azure Cloud Distributed execution before writing `pingpong.cc`.
 
 #### 1. Hypothesis (Written BEFORE running test)
-1. **Loopback Dimension (Dimension 1)**:
+1. **Loopback Dimension (Bare-Metal Debian 12)**:
    - On the same host with Soft-RoCE (`rxe0`), the kernel detects a local destination IP, applies `RXE_LOOPBACK_MASK`, and bypasses `dev_queue_xmit` via `rxe_loopback()`.
-   - Small message (64B) $P_{50}$ latency should be in the range of **10–18 µs**, dominated by CPU memory copy between kernel worker threads and user/kernel context switches.
-   - Bandwidth will be memory-bus and CPU copy-rate bound rather than network-card bound.
-2. **Cross-Host Physical Ethernet Dimension (Dimension 2)**:
-   - Packets to the Debian 12 homelab must traverse the physical Ethernet MAC/PHY, network cable, and switch/NIC FIFO buffers.
-   - Small message (64B) $P_{50}$ latency should be in the range of **50–90 µs** over 1GbE (or **15–25 µs** if 2.5GbE/10GbE), exhibiting higher tail latency ($P_{99}$) due to hardware interrupt coalescing on the physical NICs.
-   - Large messages (1MB) will show significant serialization delay on 1GbE ($\sim 8.4\text{ ms}$).
+   - Small message (64B) $P_{50}$ latency should be in the range of **3–5 µs** on bare metal without virtualization/hypervisor overhead, dominated by CPU memory copy between kernel worker threads and user/kernel context switches.
+   - Bandwidth will be memory-bus and CPU copy-rate bound rather than physical link bound.
+2. **Distributed Cloud Dimension (Azure Linux VM)**:
+   - ~~*Physical Ethernet Cable Homelab Option*~~: **Marked out / Omitted**. Physical cross-host cable bridging (WSL2 hypervisor traversal, USB-C adapter, ICS routing) has been forgone in favor of clean Azure Linux cloud instances.
+   - Packets across cloud nodes traverse the native virtual network (VNet) interface with standard Linux kernel routing.
+   - Small message (64B) $P_{50}$ latency is governed by cloud datacenter network fabric latency and vCPU scheduling.
+   - Large messages (1MB+) will reflect cloud link throughput.
 3. **Acceptance Criteria for D1 `pingpong.cc`**:
    - Once implemented, our custom `pingpong` tool must track within $\le 20\%$ of these recorded `ib_send_lat` baselines on the same hardware.
 
 #### 2. Experimental Result
-- **Debian Homelab Loopback Baseline** (`results/baseline_loopback_send_lat.txt`):
+- **Debian Bare-Metal Loopback Baseline** (`results/baseline_loopback_send_lat.txt`):
   - **Transport**: RC over `rxe0`, GID index 1 (`::ffff:192.168.137.2`), MTU 1024B.
   - **Small-Message Latency (64B)**:
     - $t_{\text{min}} = 2.95\ \mu\text{s}$
@@ -60,13 +61,13 @@ The core discipline of this project is hypothesis-driven engineering. Before exe
     - 8MB: $t_{\text{typical}} = 22440.85\ \mu\text{s}$ ($\sim 22.44\text{ ms}$, bandwidth $\approx 373\text{ MB/s}$)
   - **Tail Latency Anomalies**:
     - At 256B and 512B, observed transient $t_{\text{max}} \ge 660\ \mu\text{s}$ ($>200\times$ typical), proving kernel worker scheduling jitter under `PREEMPT_DYNAMIC`.
+- **Azure Cloud Distributed Baseline**: [Pending Azure VM deployment]
 
 #### 3. Gap Analysis & Root Cause
 - **Hypothesis vs. Result**:
   - The hypothesis predicted small-message latency of $10\text{--}18\ \mu\text{s}$ on general Soft-RoCE. The observed $3.11\ \mu\text{s}$ on the AMD A9 dual-core bare-metal CPU was significantly lower because both sender and receiver ran on Cores 0 and 1 with direct shared memory short-circuiting in `rxe_loopback()` without virtual machine hypervisor overhead.
   - **Official Target for D1 `pingpong.cc`**:
-    At 64B on the Debian homelab, our custom implementation must achieve $P_{50} \le 3.11 \times 1.20 = \mathbf{3.73\ \mu s}$.
-- **Cross-Host Ethernet Baseline**: [Pending cross-cable run]
+    At 64B on the Debian bare-metal node, our custom implementation must achieve $P_{50} \le 3.11 \times 1.20 = \mathbf{3.73\ \mu s}$.
 
 ---
 

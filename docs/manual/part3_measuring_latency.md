@@ -283,7 +283,7 @@ Every entry in `docs/gap_analysis.md` must follow this structure:
 
 #### Worked Example Entry for `docs/gap_analysis.md`
 
-```markdown
+``````markdown
 ### Experiment Log: GAP-004 - Evaluation of Inline Sends vs Registered DMA on Soft-RoCE
 
 * **Date**: 2026-10-28
@@ -313,7 +313,7 @@ message_size,transport,inline_mode,p50_us,p90_us,p99_us,p99.9_us
 1. **Observation**: Inline sends reduced 64-byte P50 latency by 2.21 µs (19.3%), matching our prediction. 
 2. **Root Cause Analysis**: Inspecting `rdma-core/providers/rxe/rxe.c` confirmed that when `IBV_SEND_INLINE` is set, `rxe_post_send` copies the user buffer directly into the WQE payload array (`wqe->dma.sge[0].addr`). When disabled, the kernel thread `rxe_worker` must invoke `copy_from_user` or walk the `ib_umem` scatterlist to access user pages, incurring cache misses.
 3. **Action Item**: Configured `max_inline_data = 256` as the default in `pingpong/pingpong.cc` for all messages $\le 256$ bytes.
-```
+``````
 
 ---
 

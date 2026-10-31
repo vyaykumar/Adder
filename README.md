@@ -134,6 +134,7 @@ Adder/
 │   └── archive/                # Historical versioned run archives
 │
 └── docs/                       # Engineering logs & specifications
+    ├── man/                    # Modular systems reference manual (Man 00 through Man 11)
     ├── manual/                 # In-depth RDMA, verbs, & latency theory handbooks
     ├── hardware_config.md      # Multi-machine testbed documentation
     ├── gap_analysis.md         # Hypothesis -> Test -> Conclusion logs
@@ -147,14 +148,13 @@ Adder/
 
 Adder is architected to evaluate performance across two distinct environments:
 
-### Local Testbed (Heterogeneous Laptop / VM)
-* **Processor**: 12th Gen Intel Core i3-1220P (2 P-cores / 4 threads, 8 E-cores / 8 threads).
-* **Topology Rule**: `adder::shared::CpuTopology` automatically inspects `/sys/devices/system/cpu/` to cluster homogeneous cores. For $N=4$ benchmarks, it selects 4 E-cores sharing the **same physical L2 cache cluster** (e.g. Cores 4–7), preventing artificial cache-bouncing stragglers.
-* **Driver**: Soft-RoCE (`rdma_rxe`) over kernel loopback or veth pairs.
+### Local & Bare-Metal Testbeds
+* **Machine Profile 1 (Windows 11 / Intel i3-1220P)**: Local code editing, IDE integration, and build verification.
+* **Machine Profile 2 (Debian 12 Bare-Metal)**: Dedicated standalone Linux host for unthrottled native kernel execution and local loopback reference profiling. Physical cross-host cable bridging is omitted in favor of cloud distributed instances.
 
-### Cloud Target (Azure Linux / Bare-Metal Instance)
-* **Target VMs**: Standard Azure Linux VMs (e.g. `Standard_D4s_v5` with 4 dedicated vCPUs, 16 GB RAM) or HPC instances with Mellanox ConnectX adapters.
-* **Role**: Provides unthrottled upstream Linux kernel execution with native network interfaces, allowing cross-host multi-node testing without WSL hypervisor restrictions.
+### Primary Distributed Target (Dedicated Azure Cloud Instance)
+* **Target VMs**: Dedicated Azure Linux VMs (e.g. `Standard_D4s_v5` with 4 vCPUs, 16 GB RAM) or HPC instances with Mellanox ConnectX adapters.
+* **Role**: Primary distributed execution target for multi-node collectives and cross-host benchmarking, avoiding WSL2 hypervisor overhead, USB-C adapter bottlenecks, and physical wiring complexities.
 
 ---
 
