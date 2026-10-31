@@ -44,7 +44,7 @@ Adder is organized into four sequential deliverables, each governed by quantitat
   * Registered Memory vs. Inline (`IBV_SEND_INLINE`).
   * Message size sweep from 64 B to 1 MB.
 * **Target Milestones**:
-  * **P50 Latency Target**: Match `ib_send_lat` on the same testbed within $\le 20\%$.
+  * **P50 Latency Target**: Match `ib_send_lat` on the same testbed within $\le 20$%.
   * **Sampling Rigour**: Full HDR percentile distribution ($P_{50}, P_{90}, P_{99}, P_{99.9}, P_{99.99}$) over $\ge 1{,}000{,}000$ timed iterations.
   * **UD Compliance**: Enforce 40-byte Global Routing Header (GRH) buffer offsets and strict active MTU clamping.
 
@@ -55,7 +55,7 @@ Adder is organized into four sequential deliverables, each governed by quantitat
   * Binary Tree All-Reduce implementation ($2\log_2 N \cdot S$ bytes) to identify message-size crossover boundaries.
   * Credit-loop flow control over lock-free SPSC rings to eliminate Receiver Not Ready (RNR) hardware retries.
 * **Target Milestones**:
-  * **Throughput Target**: Achieve $70\%\text{ to }80\%$ of `MPI_Allreduce` bandwidth at buffer sizes $\ge 1\text{ MB}$.
+  * **Throughput Target**: Achieve 70% to 80% of `MPI_Allreduce` bandwidth at buffer sizes $\ge 1\text{ MB}$.
   * **Correctness Target**: Bit-exact sum verification on integer buffers; floating-point verification within defined rounding epsilon.
   * **Scaling Target**: Clean, non-oversubscribed verification across $N=2$ and $N=4$ nodes, with $N=8$ as a stress test.
 
@@ -64,11 +64,11 @@ Adder is organized into four sequential deliverables, each governed by quantitat
 * **Scope**:
   * Online monitoring of chunk and round completion times via Completion Queue timestamps.
   * Exponential Moving Average (EMA) mean and variance estimation flagging nodes exceeding $\mu + 2\sigma$ for 3 consecutive rounds.
-  * Dynamic schedule rebalancing that redistributes chunk workloads while strictly maintaining the **Conservation Invariant** ($\sum \text{chunks}_i = \text{total\_chunks}$).
+  * Dynamic schedule rebalancing that redistributes chunk workloads while strictly maintaining the **Conservation Invariant** ($\sum \text{chunks}_i = \text{Total Chunks}$).
   * Out-of-band TCP epoch synchronization with start round $R \ge \text{current} + 2$ to guarantee zero intra-round schedule divergence.
 * **Target Milestones**:
-  * **Tail Latency Target**: Under an injected $2\times$ straggler delay, $P_{99}$ degradation must not exceed $50\%$ (compared to $\ge 200\%$ without mitigation).
-  * **Detection Target**: Flag the straggler within $\le 2$ all-reduce rounds with $\ge 90\%$ accuracy.
+  * **Tail Latency Target**: Under an injected $2\times$ straggler delay, $P_{99}$ degradation must not exceed 50% (compared to $\ge 200$% without mitigation).
+  * **Detection Target**: Flag the straggler within $\le 2$ all-reduce rounds with $\ge 90$% accuracy.
 
 ### D4: In-Network Aggregation Emulation (Stretch Goal, `innet_agg/`)
 * **Objective**: Emulate programmable network switch aggregation using eBPF/XDP with a C23 userspace fallback.

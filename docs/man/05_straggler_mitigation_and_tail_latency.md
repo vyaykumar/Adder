@@ -11,7 +11,7 @@ Node 2 (SLOW):  [       Compute (STRAGGLER)       ][ All-Reduce ] ──► Barr
 Node 3 (Fast):  [   Compute   ][ All-Reduce ]════════════════════► WAITING FOR NODE 2...
 ```
 
-* **Tail Latency Collapse**: Even if $99\%$ of chunks finish in $100\ \mu\text{s}$, a single degraded core or throttled network link dragging at $2\text{ ms}$ degrades the overall collective completion time from $100\ \mu\text{s}$ to $2{,}000\ \mu\text{s}$ ($20\times$ slowdown!).
+* **Tail Latency Collapse**: Even if 99% of chunks finish in $100\ \mu\text{s}$, a single degraded core or throttled network link dragging at $2\text{ ms}$ degrades the overall collective completion time from $100\ \mu\text{s}$ to $2{,}000\ \mu\text{s}$ ($20\times$ slowdown!).
 * **Root Causes in Production**: Thermal throttling, background OS interrupts, noisy cloud hypervisor neighbors (CPU steal time), degraded Ethernet cables, or asymmetric core layouts (e.g. Intel P-cores vs. E-cores).
 
 ---
@@ -52,7 +52,7 @@ $$\sum_{i=0}^{N-1} \text{chunks}_i = \text{Total Chunks} \quad (\forall \text{ e
 
 ### 3.2 Rebalancing Algorithm
 1. **Identify Stragglers**: Query the `StragglerDetector` for all nodes where `is_straggler == true`.
-2. **Shed Workload**: Cut the straggler's chunk allocation by $50\%$ (down to a minimum floor of 1 chunk).
+2. **Shed Workload**: Cut the straggler's chunk allocation by 50% (down to a minimum floor of 1 chunk).
 3. **Redistribute**: Evenly allocate the shed chunks among the remaining fast (non-straggler) nodes.
 4. **Assert Invariant**: Validate that $\sum \text{chunks}_i == \text{Total Chunks}$.
 

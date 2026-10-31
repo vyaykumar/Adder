@@ -102,7 +102,7 @@ Scientific rigor is maintained through the three-phase **Gap Analysis** protocol
 ## 5. Comparative Validation Against Standard Tools
 
 ### 5.1 Validating Ping-Pong against `perftest`
-Deliverable D1 targets matching `ib_send_lat` within $\le 20\%$:
+Deliverable D1 targets matching `ib_send_lat` within $\le 20$%:
 ```bash
 # Node A (Server)
 ib_send_lat -d rxe0 -i 1 -x 1 -F -a
@@ -112,7 +112,7 @@ ib_send_lat -d rxe0 -i 1 -x 1 -F -a <SERVER_IP>
 ```
 
 ### 5.2 Validating All-Reduce against `MPI_Allreduce`
-Deliverable D2 targets reaching $70\%\text{ to }80\%$ of `MPI_Allreduce` at $\ge 1\text{ MB}$:
+Deliverable D2 targets reaching 70% to 80% of `MPI_Allreduce` at $\ge 1\text{ MB}$:
 ```bash
 # Force MPI onto TCP / Soft-RoCE device
 mpirun -np 4 --mca btl tcp,self ./allreduce_bench --compare-mpi

@@ -262,7 +262,7 @@ taskset -c 4 perf record -F 999 -g -- ./build/pingpong --client 127.0.0.1 --size
 perf report --stdio --no-children
 ```
 
-* **What you should see**: $> 90\%$ of cycles concentrated in `ibv_poll_cq` (specifically `rxe_poll_cq` in userspace).
+* **What you should see**: $> 90$% of cycles concentrated in `ibv_poll_cq` (specifically `rxe_poll_cq` in userspace).
 * **What you should NOT see**: Any traces of `__libc_malloc`, `page_fault`, `sys_enter`, or C++ runtime exception unwinding functions.
 
 ---

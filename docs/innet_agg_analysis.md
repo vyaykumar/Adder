@@ -11,7 +11,7 @@ Evaluate the gradient volume reduction and end-to-end all-reduce latency using s
 
 ## Quantization Accuracy
 - Gradient representation: 32-bit fixed point with 16 fractional bits.
-- Target Scale: $N \times \text{max\_abs\_val} < 2^{31}-1$.
+- Target Scale: $N \times V_{\max} < 2^{31}-1$.
 - Maximum observed quantization error vs IEEE-754 FP32 sum: [Pending]
 - Overflow count (tracked via C23 `ckd_add`): [Pending]
 

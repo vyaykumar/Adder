@@ -41,7 +41,7 @@ The core discipline of this project is hypothesis-driven engineering. Before exe
    - Small message (64B) $P_{50}$ latency is governed by cloud datacenter network fabric latency and vCPU scheduling.
    - Large messages (1MB+) will reflect cloud link throughput.
 3. **Acceptance Criteria for D1 `pingpong.cc`**:
-   - Once implemented, our custom `pingpong` tool must track within $\le 20\%$ of these recorded `ib_send_lat` baselines on the same hardware.
+   - Once implemented, our custom `pingpong` tool must track within $\le 20$% of these recorded `ib_send_lat` baselines on the same hardware.
 
 #### 2. Experimental Result
 - **Debian Bare-Metal Loopback Baseline** (`results/baseline_loopback_send_lat.txt`):
