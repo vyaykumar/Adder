@@ -3,6 +3,7 @@ build/
 cmake-build-*/
 bin/
 lib/
+compile_commands.json
 
 # Compiled Object Files & Libraries
 *.o
@@ -33,3 +34,4 @@ Desktop.ini
 # Scratch Files
 *.tmp
 *.log
+.zed/

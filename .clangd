@@ -1,0 +1,19 @@
+CompileFlags:
+  CompilationDatabase: "."
+  Add:
+    - "-std=c++23"
+    - "-I."
+    - "-Wall"
+    - "-Wextra"
+  Remove:
+    - "-include"
+    - "-Winvalid-pch"
+Diagnostics:
+  ClangTidy:
+    Add:
+      - "readability-*"
+      - "modernize-*"
+      - "performance-*"
+      - "bugprone-*"
+    Remove:
+      - "modernize-use-trailing-return-type"
