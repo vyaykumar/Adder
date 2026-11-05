@@ -31,18 +31,16 @@ public:
         size_t length,
         int access_flags = IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_READ
     ) {
-        // TODO: [Implement Memory Registration]
-        // 1. Verify pd != nullptr, addr != nullptr, length > 0.
-        // 2. Call `struct ibv_mr* mr = ibv_reg_mr(pd, addr, length, access_flags);`
-        // 3. If mr is nullptr:
         //    - If errno == ENOMEM: Note that RLIMIT_MEMLOCK was likely exceeded (run `ulimit -l unlimited`).
-        //    - Return unexpected with formatted error message.
-        // 4. Return MemoryRegion(mr).
-        (void)pd;
-        (void)addr;
-        (void)length;
-        (void)access_flags;
-        return std::unexpected("TODO: Implement MemoryRegion::register_buffer");
+        if (pd == nullptr or addr == nullptr or length <= 0)
+            return std::unexpected("Invalid parameter values");
+
+        struct ibv_mr *mr = ibv_reg_mr(pd, addr, length, access_flags);
+        if (mr == nullptr)
+            return std::unexpected(
+                std::format("Failed to register buffer at address {}: {} ({})", addr, strerror(errno), errno)
+            );
+        return MemoryRegion(mr);
     }
 
     /// \brief Overload accepting managed ProtectionDomain.
@@ -57,11 +55,8 @@ public:
 
     /// \brief Destructor. Deregisters the memory region from the NIC.
     ~MemoryRegion() {
-        // TODO: [Implement Memory Deregistration]
-        // 1. If mr_ != nullptr, call `ibv_dereg_mr(mr_)`.
-        // 2. Set mr_ = nullptr.
-        // Pitfall: Never deregister an MR while outstanding Work Requests
-        // referencing its lkey/rkey are still in flight in a QP!
+        if (mr_ != nullptr) ibv_dereg_mr(mr_);
+        mr_ = nullptr;
     }
 
     // Move-only semantics
@@ -74,48 +69,40 @@ public:
 
     MemoryRegion& operator=(MemoryRegion&& other) noexcept {
         if (this != &other) {
-            // TODO: [Implement Move Assignment]
-            // 1. Deregister existing mr_ via ibv_dereg_mr().
-            // 2. Transfer mr_ from other.
-            // 3. Reset other.mr_ = nullptr.
+            if (mr_) ibv_dereg_mr(mr_);
+            mr_ = other.mr_;
+            other.mr_ = nullptr;
         }
         return *this;
     }
 
     /// \brief Local Key: used by local HCA to validate DMA read/write access.
     [[nodiscard]] uint32_t lkey() const noexcept {
-        // TODO: Return mr_->lkey if mr_ != nullptr, else 0
-        return 0;
+        return mr_ != nullptr ? mr_->lkey : 0;
     }
 
     /// \brief Remote Key: exchanged with remote peer for one-sided RDMA_WRITE/READ.
     [[nodiscard]] uint32_t rkey() const noexcept {
-        // TODO: Return mr_->rkey if mr_ != nullptr, else 0
-        return 0;
+        return mr_ != nullptr ? mr_->rkey : 0;
     }
 
     /// \brief Base address of the registered buffer.
     [[nodiscard]] void* addr() const noexcept {
-        // TODO: Return mr_->addr if mr_ != nullptr, else nullptr
-        return nullptr;
+        return mr_ != nullptr ? mr_->addr : nullptr;
     }
 
     /// \brief Length of registered buffer in bytes.
     [[nodiscard]] size_t length() const noexcept {
-        // TODO: Return mr_->length if mr_ != nullptr, else 0
-        return 0;
+        return mr_ != nullptr ? mr_->length : 0;
     }
 
     /// \brief Returns a typed std::span viewing the registered memory.
     template <typename T>
     [[nodiscard]] std::span<T> as_span() const noexcept {
-        // TODO: [Implement Typed View]
-        // If !mr_ || !mr_->addr, return empty span {}.
-        // Otherwise return std::span<T>(static_cast<T*>(mr_->addr), mr_->length / sizeof(T)).
-        return {};
+        if (!mr_ or !mr_->addr) return {};
+        return std::span<T>(static_cast<T*>(mr_->addr), mr_->length/sizeof(T));
     }
 
-    /// \brief Raw pointer accessor.
     [[nodiscard]] struct ibv_mr* get() const noexcept { return mr_; }
     [[nodiscard]] explicit operator bool() const noexcept { return mr_ != nullptr; }
 
