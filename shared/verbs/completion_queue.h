@@ -1,5 +1,6 @@
 #pragma once
 
+#include <format>
 #include <infiniband/verbs.h>
 #include <shared/verbs/context.h>
 #include <expected>
@@ -32,20 +33,18 @@ public:
         struct ibv_comp_channel* channel = nullptr,
         int comp_vector = 0
     ) {
-        // TODO: [Implement CQ Creation]
-        // 1. Verify ctx != nullptr and cqe_depth > 0.
-        // 2. Call `struct ibv_cq* cq = ibv_create_cq(ctx, cqe_depth, cq_context, channel, comp_vector);`
-        // 3. If cq is nullptr, return unexpected with strerror(errno).
-        // 4. Return CompletionQueue(cq, cqe_depth).
-        (void)ctx;
-        (void)cqe_depth;
-        (void)cq_context;
-        (void)channel;
-        (void)comp_vector;
-        return std::unexpected("TODO: Implement CompletionQueue::create");
+        if (!ctx or cqe_depth <= 0) return std::unexpected("Invalid parameters");
+        struct ibv_cq* cq = ibv_create_cq(ctx, cqe_depth, cq_context, channel, comp_vector);
+        if (!cq) {
+            int error = errno;
+            return std::unexpected(
+                // Add more information to this?
+                std::format("Failure in create completion queue: {} ({})", strerror(error), error)
+            );
+        }
+        return CompletionQueue(cq, cqe_depth);
     }
 
-    /// \brief Overload accepting managed Context.
     [[nodiscard]] static std::expected<CompletionQueue, std::string> create(
         const Context& ctx,
         int cqe_depth = 256
@@ -55,17 +54,17 @@ public:
 
     /// \brief Destructor. Destroys the Completion Queue.
     ~CompletionQueue() {
-        // TODO: [Implement CQ Destruction]
         // Pitfall: ibv_destroy_cq() will fail if any Queue Pair (QP) is still associated
         // with this CQ! All QPs must be destroyed before their corresponding CQs.
-        // If cq_ != nullptr, call ibv_destroy_cq(cq_) and set cq_ = nullptr.
+        if (cq_) ibv_destroy_cq(cq_);
+        cq_ = nullptr;
     }
 
     // Move-only semantics
     CompletionQueue(const CompletionQueue&) = delete;
     CompletionQueue& operator=(const CompletionQueue&) = delete;
 
-    CompletionQueue(CompletionQueue&& other) noexcept 
+    CompletionQueue(CompletionQueue&& other) noexcept
         : cq_(other.cq_), depth_(other.depth_) {
         other.cq_ = nullptr;
         other.depth_ = 0;
@@ -73,10 +72,12 @@ public:
 
     CompletionQueue& operator=(CompletionQueue&& other) noexcept {
         if (this != &other) {
-            // TODO: [Implement Move Assignment]
-            // 1. Destroy existing cq_ via ibv_destroy_cq() if non-null.
-            // 2. Transfer cq_ and depth_ from other.
-            // 3. Reset other.cq_ = nullptr and other.depth_ = 0.
+            if (cq_) ibv_destroy_cq(cq_);
+            cq_ = other.cq_;
+            depth_ = other.depth_;
+
+            other.cq_ = nullptr;
+            other.depth_ = 0;
         }
         return *this;
     }
@@ -90,34 +91,25 @@ public:
     /// \param wc_array Pointer to output array of `ibv_wc`.
     /// \return Number of completions reaped (>= 0), or negative value on driver failure.
     [[nodiscard]] inline int poll(int num_entries, struct ibv_wc* wc_array) noexcept {
-        // TODO: Call `ibv_poll_cq(cq_, num_entries, wc_array)` directly.
-        (void)num_entries;
-        (void)wc_array;
-        return 0;
+        return ibv_poll_cq(cq_, num_entries, wc_array);
     }
 
     /// \brief Poll a single Work Completion from the CQ.
     /// \param wc Output reference to `ibv_wc`.
     /// \return True if a completion was reaped, false if CQ was empty.
     [[nodiscard]] inline bool poll_one(struct ibv_wc& wc) noexcept {
-        // TODO: Call `ibv_poll_cq(cq_, 1, &wc)` and return true if result == 1.
-        (void)wc;
-        return false;
+        return ibv_poll_cq(cq_, 1, &wc) == 1;
     }
 
     /// \brief Batch poll using modern C++ std::span.
     /// \param batch Span of pre-allocated `ibv_wc` elements.
     /// \return Number of completions reaped.
     [[nodiscard]] inline int poll_batch(std::span<struct ibv_wc> batch) noexcept {
-        // TODO: Call `ibv_poll_cq(cq_, static_cast<int>(batch.size()), batch.data())`.
-        (void)batch;
-        return 0;
+        return ibv_poll_cq(cq_, static_cast<int>(batch.size()), batch.data());;
     }
 
-    /// \brief Configured depth of the CQ.
     [[nodiscard]] int depth() const noexcept { return depth_; }
 
-    /// \brief Raw pointer accessor.
     [[nodiscard]] struct ibv_cq* get() const noexcept { return cq_; }
     [[nodiscard]] explicit operator bool() const noexcept { return cq_ != nullptr; }
 
