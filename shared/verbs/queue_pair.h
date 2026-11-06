@@ -57,11 +57,26 @@ public:
         // 3. Call `struct ibv_qp* qp = ibv_create_qp(pd, &init_attr);`
         // 4. If qp is nullptr, return unexpected with strerror(errno).
         // 5. Return QueuePair(qp, init_attr.cap.max_inline_data).
-        (void)pd;
-        (void)send_cq;
-        (void)recv_cq;
-        (void)cfg;
-        return std::unexpected("TODO: Implement QueuePair::create");
+        if (!pd or !send_cq or !recv_cq) return std::unexpected("Null arguments");
+
+        struct ibv_qp_init_attr init_attr {
+            .send_cq = send_cq,
+            .recv_cq = recv_cq,
+            .cap.max_send_wr = cfg.max_send_wr,
+            .cap.max_recv_wr = cfg.max_recv_wr,
+            .cap.max_send_sge = cfg.max_send_sge,
+            .cap.max_recv_sge = cfg.max_send_sge,
+            .cap.max_inline_data = cfg.max_inline_data,
+            .qp_type = cfg.qp_type,
+            .sq_sig_all = cfg.sq_sig_all
+        };
+        struct ibv_qp* qp = ibv_create_qp(pd, &init_attr);
+        if (!qp)
+            return std::unexpected(
+                std::format("Failed to initialize QueuePair: {} ({})" ,strerror(errno), errno);
+            )
+        return QueuePair(qp, init_attr.cap.max_inline_data);
+
     }
 
     /// \brief Overload accepting managed PD and CQ wrappers.
@@ -80,13 +95,17 @@ public:
         // Pitfall: ibv_destroy_qp() must be called BEFORE destroying the associated
         // CQs and PD, otherwise the kernel verbs subsystem returns EBUSY.
         // If qp_ != nullptr, call ibv_destroy_qp(qp_) and set qp_ = nullptr.
+        if (qp_) ibv_destroy_qp(qp_);
+        qp_ = nullptr;
+        // Question: Won't we need guards to defend against destroy() failing?
+        // Arent destructors implicitly noexcept?
     }
 
     // Move-only semantics
     QueuePair(const QueuePair&) = delete;
     QueuePair& operator=(const QueuePair&) = delete;
 
-    QueuePair(QueuePair&& other) noexcept 
+    QueuePair(QueuePair&& other) noexcept
         : qp_(other.qp_), actual_inline_data_(other.actual_inline_data_) {
         other.qp_ = nullptr;
         other.actual_inline_data_ = 0;
@@ -98,6 +117,11 @@ public:
             // 1. Destroy existing qp_ via ibv_destroy_qp() if non-null.
             // 2. Transfer qp_ and actual_inline_data_ from other.
             // 3. Reset other.qp_ = nullptr and other.actual_inline_data_ = 0.
+            if (qp_) ibv_destroy_qp(qp_);
+            qp_ = other.qp_;
+            actual_inline_data_ = other.actual_inline_data_;
+            other.qp_ = nullptr;
+            other.actual_inline_data_ = 0;
         }
         return *this;
     }
@@ -112,9 +136,7 @@ public:
     /// \return 0 on success, or positive errno on failure.
     [[nodiscard]] inline int post_send(struct ibv_send_wr* wr, struct ibv_send_wr** bad_wr) noexcept {
         // TODO: Call `ibv_post_send(qp_, wr, bad_wr)` directly.
-        (void)wr;
-        (void)bad_wr;
-        return 0;
+        return ibv_post_send(qp_, wr, bad_wr);
     }
 
     /// \brief Post a linked list of Receive Work Requests to the Receive Queue.
@@ -123,15 +145,13 @@ public:
     /// \return 0 on success, or positive errno on failure.
     [[nodiscard]] inline int post_recv(struct ibv_recv_wr* wr, struct ibv_recv_wr** bad_wr) noexcept {
         // TODO: Call `ibv_post_recv(qp_, wr, bad_wr)` directly.
-        (void)wr;
-        (void)bad_wr;
-        return 0;
+        return ibv_post_recv(qp_, wr, bad_wr);
     }
 
     /// \brief Returns the 24-bit Queue Pair Number assigned by hardware.
     [[nodiscard]] uint32_t qp_num() const noexcept {
         // TODO: Return qp_->qp_num if qp_ != nullptr, else 0
-        return 0;
+        return qp_ ? qp_->qp_num : 0;
     }
 
     /// \brief Actual inline data size granted by the HCA driver.
@@ -142,7 +162,7 @@ public:
     [[nodiscard]] explicit operator bool() const noexcept { return qp_ != nullptr; }
 
 private:
-    explicit QueuePair(struct ibv_qp* qp, uint32_t inline_bytes) 
+    explicit QueuePair(struct ibv_qp* qp, uint32_t inline_bytes)
         : qp_(qp), actual_inline_data_(inline_bytes) {}
     struct ibv_qp* qp_{nullptr};
     uint32_t actual_inline_data_{0};
