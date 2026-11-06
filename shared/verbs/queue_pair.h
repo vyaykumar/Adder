@@ -59,6 +59,7 @@ public:
         // 5. Return QueuePair(qp, init_attr.cap.max_inline_data).
         if (!pd or !send_cq or !recv_cq) return std::unexpected("Null arguments");
 
+        // why is cfg not found here?
         struct ibv_qp_init_attr init_attr {
             .send_cq = send_cq,
             .recv_cq = recv_cq,
@@ -76,7 +77,6 @@ public:
                 std::format("Failed to initialize QueuePair: {} ({})" ,strerror(errno), errno);
             )
         return QueuePair(qp, init_attr.cap.max_inline_data);
-
     }
 
     /// \brief Overload accepting managed PD and CQ wrappers.

@@ -56,11 +56,22 @@ namespace qp_state {
     // 5. Call `int ret = ibv_modify_qp(qp, &attr, mask);`
     // 6. If ret != 0, return unexpected with strerror(ret).
     // 7. Return {};
-    (void)qp;
-    (void)port_num;
-    (void)pkey_index;
-    (void)access_flags;
-    return std::unexpected("TODO: Implement transition_rc_to_init");
+    if (!qp) return std::unexpected("Null parameter");
+
+    struct ibv_qp_attr attr{
+        .qp_state = IBV_QPS_INIT,
+        .pkey_index = static_cast<uint16_t>(pkey_index),
+        .port_num = port_num,
+        .qp_access_flags = access_flags
+    };
+    int mask = IBV_QP_STATE | IBV_QP_PKEY_INDEX | IBV_QP_PORT | IBV_QP_ACCESS_FLAGS;
+
+    int ret = ibv_modify_qp(qp, &attr, mask);
+    if (ret != 0)
+        return std::unexpected(
+            std::format("Failed to INIT QueuePair: {} ({})", streror(errno), errno)
+        );
+    return {};
 }
 
 /// \brief Transitions an RC Queue Pair from INIT -> RTR (Ready to Receive).
@@ -102,13 +113,31 @@ namespace qp_state {
     // 6. Call `int ret = ibv_modify_qp(qp, &attr, mask);`
     // 7. If ret != 0, return unexpected with strerror(ret).
     // 8. Return {};
-    (void)qp;
-    (void)remote;
-    (void)port_num;
-    (void)gid_index;
-    (void)path_mtu;
-    (void)min_rnr_timer;
-    return std::unexpected("TODO: Implement transition_rc_to_rtr");
+    if (!qp) return std::unexpected("Null parameter");
+
+    struct ibv_qp_attr attr{
+        .qp_state = IBV_QPS_RTR,
+        .path_mtu = path_mtu,
+        .dest_qp_num = remote.qpn,
+        .rq_psn = remote.psn,
+        .max_dest_rd_atomic = 1,
+        .min_rnr_timer = min_rnr_timer,
+        .ah_attr.is_global = 1,
+        .ah_attr.port_num = port_num,
+        .ah_attr.dlid = remote.lid,
+        .ah_attr.grh.dgid = remote.gid,
+        .ah_attr.grh.sgid_index = static_cast<uint8_t>(gid_index),
+        .ah_attr.grh.hop_limit = 64,
+    };
+    int mask = IBV_QP_STATE | IBV_QP_AV | IBV_QP_PATH_MTU | IBV_QP_DEST_QPN |
+               IBV_QP_RQ_PSN | IBV_QP_MAX_DEST_RD_ATOMIC  | IBV_QP_MIN_RNR_TIMER;
+
+    int ret = ibv_modify_qp(qp, &attr, mask);
+    if (ret != 0)
+        return std::unexpected(
+            std::format("Failed to RTR QueuePair: {} ({})", streror(errno), errno)
+        );
+    return {};
 }
 
 /// \brief Transitions an RC Queue Pair from RTR -> RTS (Ready to Send).
@@ -141,12 +170,26 @@ namespace qp_state {
     // 5. Call `int ret = ibv_modify_qp(qp, &attr, mask);`
     // 6. If ret != 0, return unexpected with strerror(ret).
     // 7. Return {};
-    (void)qp;
-    (void)local_send_psn;
-    (void)timeout;
-    (void)retry_cnt;
-    (void)rnr_retry;
-    return std::unexpected("TODO: Implement transition_rc_to_rts");
+    if (!qp) return std::unexpected("Null parameter");
+
+    struct ibv_qp_attr attr{
+        .qp_state = IBV_QPS_RTS,
+        .timeout = timeout,
+        .retry_cnt = retry_cnt,
+        .rnr_retry = rnr_retry,
+        .sq_psn = local_send_psn,
+        .max_rd_atomic = 1
+    };
+    int mask = IBV_QP_STATE | IBV_QP_TIMEOUT | IBV_QP_RETRY_CNT |
+               IBV_QP_RNR_RETRY | IBV_QP_SQ_PSN | IBV_QP_MAX_QP_RD_ATOMIC;
+
+    int ret = ibv_modify_qp(qp, &attr, mask);
+    if (ret != 0)
+        return std::unexpected(
+            std::format("Failed to RTS QueuePair: {} ({})", streror(errno), errno)
+        );
+    return {};
+
 }
 
 // =============================================================================
@@ -164,11 +207,15 @@ namespace qp_state {
     // 1. Initialize `struct ibv_qp_attr attr{}` with IBV_QPS_INIT, pkey_index, port_num, qkey.
     // 2. Bitmask: IBV_QP_STATE | IBV_QP_PKEY_INDEX | IBV_QP_PORT | IBV_QP_QKEY.
     // 3. Call `ibv_modify_qp(qp, &attr, mask)`.
-    (void)qp;
-    (void)port_num;
-    (void)qkey;
-    (void)pkey_index;
-    return std::unexpected("TODO: Implement transition_ud_to_init");
+    struct ibv_qp_attr attr{
+        .qp_state = IBV_QPS_INIT,
+        .pkey_index = static_cast<uint16_t>(pkey_index),
+        .port_num = port_num,
+        .qkey = qkey
+    };
+    int mask = IBV_QP_STATE | IBV_QP_PKEY_INDEX | IBV_QP_PORT | IBV_QP_QKEY;
+    ibv_modify_qp(qp, &attr, mask);
+    // No error handling here?
 }
 
 /// \brief Transitions a UD Queue Pair from INIT -> RTR.
@@ -176,8 +223,11 @@ namespace qp_state {
     // TODO: [Implement UD INIT -> RTR Transition]
     // 1. Set attr.qp_state = IBV_QPS_RTR; mask = IBV_QP_STATE.
     // 2. Call `ibv_modify_qp(qp, &attr, mask)`.
-    (void)qp;
-    return std::unexpected("TODO: Implement transition_ud_to_rtr");
+    struct ibv_qp_attr attr {
+        .qp_state = IBV_QPS_RTR,
+    }
+    int mask = IBV_QP_STATE;
+    ibv_modify_qp(qp, &attr, mask);
 }
 
 /// \brief Transitions a UD Queue Pair from RTR -> RTS.
@@ -189,9 +239,12 @@ namespace qp_state {
     // 1. Set attr.qp_state = IBV_QPS_RTS; attr.sq_psn = local_send_psn;
     // 2. Bitmask = IBV_QP_STATE | IBV_QP_SQ_PSN.
     // 3. Call `ibv_modify_qp(qp, &attr, mask)`.
-    (void)qp;
-    (void)local_send_psn;
-    return std::unexpected("TODO: Implement transition_ud_to_rts");
+    struct ibv_qp_attr attr {
+        .qp_state = IBV_QPS_RTS,
+        .sq_psn = local_send_psn,
+    }
+    int mask = IBV_QP_STATE | IBV_QP_SQ_PSN;
+    ibv_modify_qp(qp, &attr, mask);
 }
 
 // =============================================================================
@@ -201,15 +254,21 @@ namespace qp_state {
 /// \brief Transitions any QP to the ERROR state to flush all outstanding WRs.
 [[nodiscard]] inline std::expected<void, std::string> transition_to_error(struct ibv_qp* qp) {
     // TODO: Set attr.qp_state = IBV_QPS_ERR; mask = IBV_QP_STATE; call ibv_modify_qp.
-    (void)qp;
-    return std::unexpected("TODO: Implement transition_to_error");
+    struct ibv_qp_attr attr {
+        .qp_state = IBV_QPS_ERR,
+    }
+    int mask = IBV_QP_STATE;
+    ibv_modify_qp(qp, &attr, mask);
 }
 
 /// \brief Resets a QP back to the RESET state.
 [[nodiscard]] inline std::expected<void, std::string> transition_to_reset(struct ibv_qp* qp) {
     // TODO: Set attr.qp_state = IBV_QPS_RESET; mask = IBV_QP_STATE; call ibv_modify_qp.
-    (void)qp;
-    return std::unexpected("TODO: Implement transition_to_reset");
+    struct ibv_qp_attr attr {
+        .qp_state = IBV_QPS_RESET,
+    }
+    int mask = IBV_QP_STATE;
+    ibv_modify_qp(qp, &attr, mask);
 }
 
 } // namespace qp_state
