@@ -88,14 +88,21 @@ public:
 
     /// \brief Select device by name, falling back to the first discovered device if name is empty.
     [[nodiscard]] std::expected<ibv_device*, std::string> select_device(std::string_view preferred_name) const {
-        if (empty()) return std::unexpected("No RDMA devices found on host");
+        if (empty()) return std::unexpected(
+            "[DeviceList::select_device] No RDMA devices found on host (verify rdma_rxe or hardware driver is loaded)"
+        );
 
         if (!preferred_name.empty()) {
             ibv_device* device = find_by_name(preferred_name);
-            if (!device)
+            if (!device) {
                 return std::unexpected(
-                    std::format("Device {} not found", preferred_name)
+                    std::format(
+                        "[DeviceList::select_device] Device '{}' not found among {} discovered device(s)",
+                        preferred_name,
+                        count_
+                    )
                 );
+            }
             return device;
         }
 
