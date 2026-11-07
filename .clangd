@@ -8,12 +8,19 @@ CompileFlags:
   Remove:
     - "-include"
     - "-Winvalid-pch"
-Diagnostics:
-  ClangTidy:
-    Add:
-      - "readability-*"
-      - "modernize-*"
-      - "performance-*"
-      - "bugprone-*"
-    Remove:
-      - "modernize-use-trailing-return-type"
+    Diagnostics:
+      ClangTidy:
+        Add:
+          - "readability-*"
+          - "modernize-*"
+          - "performance-*"
+          - "bugprone-*"
+        Remove:
+          - "modernize-use-trailing-return-type"
+          - "readability-braces-around-statements"
+          - "readability-identifier-length"
+          - "readability-else-after-return"
+          - "readability-magic-numbers"
+          - "bugprone-easily-swappable-parameters"
+          - "readability-implicit-bool-conversion"
+          - "readability-inconsistent-ifelse-braces"
