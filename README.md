@@ -134,8 +134,10 @@ Adder/
 │   └── archive/                # Historical versioned run archives
 │
 └── docs/                       # Engineering logs & specifications
+    ├── instructions/           # Project execution instructions & guidelines
     ├── man/                    # Modular systems reference manual (Man 00 through Man 11)
     ├── manual/                 # In-depth RDMA, verbs, & latency theory handbooks
+    ├── git_commands.md         # CLI Git command reference & cheat sheet
     ├── hardware_config.md      # Multi-machine testbed documentation
     ├── gap_analysis.md         # Hypothesis -> Test -> Conclusion logs
     ├── straggler_analysis.md   # Tail-latency evaluation records
