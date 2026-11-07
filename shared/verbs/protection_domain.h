@@ -1,9 +1,10 @@
 #pragma once
 
+#include <cerrno>
+#include <expected>
 #include <format>
 #include <infiniband/verbs.h>
 #include <shared/verbs/context.h>
-#include <expected>
 #include <string>
 #include <system_error>
 
@@ -11,34 +12,33 @@ namespace adder::verbs {
 
 /// \brief RAII wrapper for an RDMA Protection Domain (`ibv_pd`).
 ///
-/// Encapsulates `ibv_alloc_pd()` and guarantees safe release via `ibv_dealloc_pd()`.
-///
 /// \see docs/man/01_rdma_and_verbs_core.md Section 3 (Object Hierarchy)
 /// \see docs/man/11_common_functions_pitfalls_and_best_practices.md (ibv_alloc_pd / ibv_dealloc_pd)
 class ProtectionDomain {
 public:
-    /// \brief Allocates a Protection Domain within the given verbs context.
-    /// \param ctx Pointer to raw `ibv_context`.
-    /// \return Managed ProtectionDomain or error string.
     [[nodiscard]] static std::expected<ProtectionDomain, std::string> alloc(struct ibv_context* ctx) {
-        if (!ctx) return std::unexpected("Null context pointer");
+        if (!ctx) return std::unexpected("[ProtectionDomain::alloc] Device context pointer is null");
+
         struct ibv_pd* pd = ibv_alloc_pd(ctx);
         if (!pd) {
             int err = errno;
+            auto device_name = ctx->device ? ibv_get_device_name(ctx->device) : "unknown";
             return std::unexpected(
-                std::format("Failed to allocate protection domain: {} ({})", strerror(err), err)
+                std::format("[ProtectionDomain::alloc] Failed to allocate ProtectionDomain for device '{}': {} ({})",
+                    device_name,
+                    std::generic_category().message(err),
+                    err)
             );
         }
         return ProtectionDomain(pd);
     }
 
-    /// \brief Overload accepting managed Context.
     [[nodiscard]] static std::expected<ProtectionDomain, std::string> alloc(const Context& ctx) {
         return alloc(ctx.get());
     }
 
     ~ProtectionDomain() {
-        if (!pd_) {
+        if (pd_) {
             ibv_dealloc_pd(pd_);
             pd_ = nullptr;
         }
