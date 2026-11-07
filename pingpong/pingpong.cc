@@ -257,6 +257,11 @@ int main(int argc, char* argv[]) {
     // TODO: Step 1: Enumerate available RDMA devices via ibv_get_device_list().
     // If cfg.device_name is empty, pick the first active device. Otherwise match by name.
     // Call ibv_open_device() to get struct ibv_context*.
+    auto **available_devices = ibv_get_device_list(nullptr);
+    if (cfg.device_name.length() == 0)
+
+
+
     struct ibv_context* ib_ctx = nullptr;
     std::cout << "// TODO: Step 1: Find and open RDMA device (ibv_get_device_list, ibv_open_device)\n";
 

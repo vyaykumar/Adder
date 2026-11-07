@@ -44,7 +44,7 @@ Adder is organized into four sequential deliverables, each governed by quantitat
   * Registered Memory vs. Inline (`IBV_SEND_INLINE`).
   * Message size sweep from 64 B to 1 MB.
 * **Target Milestones**:
-  * **P50 Latency Target**: Match `ib_send_lat` on the same testbed within $\le 20\%$.
+  * **P50 Latency Target**: Match `ib_send_lat` on the same testbed within $\le 20$%.
   * **Sampling Rigour**: Full HDR percentile distribution ($P_{50}, P_{90}, P_{99}, P_{99.9}, P_{99.99}$) over $\ge 1{,}000{,}000$ timed iterations.
   * **UD Compliance**: Enforce 40-byte Global Routing Header (GRH) buffer offsets and strict active MTU clamping.
 
@@ -55,7 +55,7 @@ Adder is organized into four sequential deliverables, each governed by quantitat
   * Binary Tree All-Reduce implementation ($2\log_2 N \cdot S$ bytes) to identify message-size crossover boundaries.
   * Credit-loop flow control over lock-free SPSC rings to eliminate Receiver Not Ready (RNR) hardware retries.
 * **Target Milestones**:
-  * **Throughput Target**: Achieve $70\%\text{ to }80\%$ of `MPI_Allreduce` bandwidth at buffer sizes $\ge 1\text{ MB}$.
+  * **Throughput Target**: Achieve 70% to 80% of `MPI_Allreduce` bandwidth at buffer sizes $\ge 1\text{ MB}$.
   * **Correctness Target**: Bit-exact sum verification on integer buffers; floating-point verification within defined rounding epsilon.
   * **Scaling Target**: Clean, non-oversubscribed verification across $N=2$ and $N=4$ nodes, with $N=8$ as a stress test.
 
@@ -64,11 +64,11 @@ Adder is organized into four sequential deliverables, each governed by quantitat
 * **Scope**:
   * Online monitoring of chunk and round completion times via Completion Queue timestamps.
   * Exponential Moving Average (EMA) mean and variance estimation flagging nodes exceeding $\mu + 2\sigma$ for 3 consecutive rounds.
-  * Dynamic schedule rebalancing that redistributes chunk workloads while strictly maintaining the **Conservation Invariant** ($\sum \text{chunks}_i = \text{total\_chunks}$).
+  * Dynamic schedule rebalancing that redistributes chunk workloads while strictly maintaining the **Conservation Invariant** ($\sum \text{chunks}_i = \text{Total Chunks}$).
   * Out-of-band TCP epoch synchronization with start round $R \ge \text{current} + 2$ to guarantee zero intra-round schedule divergence.
 * **Target Milestones**:
-  * **Tail Latency Target**: Under an injected $2\times$ straggler delay, $P_{99}$ degradation must not exceed $50\%$ (compared to $\ge 200\%$ without mitigation).
-  * **Detection Target**: Flag the straggler within $\le 2$ all-reduce rounds with $\ge 90\%$ accuracy.
+  * **Tail Latency Target**: Under an injected $2\times$ straggler delay, $P_{99}$ degradation must not exceed 50% (compared to $\ge 200$% without mitigation).
+  * **Detection Target**: Flag the straggler within $\le 2$ all-reduce rounds with $\ge 90$% accuracy.
 
 ### D4: In-Network Aggregation Emulation (Stretch Goal, `innet_agg/`)
 * **Objective**: Emulate programmable network switch aggregation using eBPF/XDP with a C23 userspace fallback.
@@ -134,7 +134,10 @@ Adder/
 │   └── archive/                # Historical versioned run archives
 │
 └── docs/                       # Engineering logs & specifications
+    ├── instructions/           # Project execution instructions & guidelines
+    ├── man/                    # Modular systems reference manual (Man 00 through Man 11)
     ├── manual/                 # In-depth RDMA, verbs, & latency theory handbooks
+    ├── git_commands.md         # CLI Git command reference & cheat sheet
     ├── hardware_config.md      # Multi-machine testbed documentation
     ├── gap_analysis.md         # Hypothesis -> Test -> Conclusion logs
     ├── straggler_analysis.md   # Tail-latency evaluation records
@@ -147,14 +150,13 @@ Adder/
 
 Adder is architected to evaluate performance across two distinct environments:
 
-### Local Testbed (Heterogeneous Laptop / VM)
-* **Processor**: 12th Gen Intel Core i3-1220P (2 P-cores / 4 threads, 8 E-cores / 8 threads).
-* **Topology Rule**: `adder::shared::CpuTopology` automatically inspects `/sys/devices/system/cpu/` to cluster homogeneous cores. For $N=4$ benchmarks, it selects 4 E-cores sharing the **same physical L2 cache cluster** (e.g. Cores 4–7), preventing artificial cache-bouncing stragglers.
-* **Driver**: Soft-RoCE (`rdma_rxe`) over kernel loopback or veth pairs.
+### Local & Bare-Metal Testbeds
+* **Machine Profile 1 (Windows 11 / Intel i3-1220P)**: Local code editing, IDE integration, and build verification.
+* **Machine Profile 2 (Debian 12 Bare-Metal)**: Dedicated standalone Linux host for unthrottled native kernel execution and local loopback reference profiling. Physical cross-host cable bridging is omitted in favor of cloud distributed instances.
 
-### Cloud Target (Azure Linux / Bare-Metal Instance)
-* **Target VMs**: Standard Azure Linux VMs (e.g. `Standard_D4s_v5` with 4 dedicated vCPUs, 16 GB RAM) or HPC instances with Mellanox ConnectX adapters.
-* **Role**: Provides unthrottled upstream Linux kernel execution with native network interfaces, allowing cross-host multi-node testing without WSL hypervisor restrictions.
+### Primary Distributed Target (Dedicated Azure Cloud Instance)
+* **Target VMs**: Dedicated Azure Linux VMs (e.g. `Standard_D4s_v5` with 4 vCPUs, 16 GB RAM) or HPC instances with Mellanox ConnectX adapters.
+* **Role**: Primary distributed execution target for multi-node collectives and cross-host benchmarking, avoiding WSL2 hypervisor overhead, USB-C adapter bottlenecks, and physical wiring complexities.
 
 ---
 
