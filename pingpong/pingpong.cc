@@ -25,6 +25,7 @@
 #include "shared/latency_harness.h"
 #include "shared/affinity.h"
 #include "shared/busy_poll.h"
+#include "shared/verbs.h"
 
 namespace {
 
@@ -48,18 +49,10 @@ struct PingPongConfig {
     std::string output_csv{""};
 };
 
-// QP exchange packet passed over TCP side channel
-struct QpExchangeInfo {
-    uint32_t qpn{0};
-    uint16_t lid{0};
-    uint32_t psn{0};
-    union ibv_gid gid{};
-    uint64_t vaddr{0};  // For RDMA_WRITE
-    uint32_t rkey{0};   // For RDMA_WRITE
-} __attribute__((packed));
+using adder::verbs::RemoteEndpoint;
 
 // Helper: Convert ibv_mtu enum to actual byte count
-size_t mtu_to_bytes(enum ibv_mtu mtu) {
+constexpr size_t mtu_to_bytes(enum ibv_mtu mtu) noexcept {
     switch (mtu) {
         case IBV_MTU_256:  return 256;
         case IBV_MTU_512:  return 512;
@@ -99,10 +92,10 @@ inline bool read_exact(int fd, void* buf, size_t len) {
     return true;
 }
 
-// TCP Out-of-band side channel to exchange QPN, LID/GID, and PSN
-std::expected<QpExchangeInfo, std::string> exchange_qp_info(
+// TCP Out-of-band side channel to exchange QPN, LID/GID, PSN, and memory keys
+std::expected<RemoteEndpoint, std::string> exchange_qp_info(
     const PingPongConfig& cfg,
-    const QpExchangeInfo& local_info
+    const RemoteEndpoint& local_info
 ) {
     int sock_fd = -1;
     if (cfg.is_server) {
@@ -158,10 +151,10 @@ std::expected<QpExchangeInfo, std::string> exchange_qp_info(
     }
 
     // Read peer QP information using read_exact
-    QpExchangeInfo remote_info{};
+    RemoteEndpoint remote_info{};
     if (!read_exact(sock_fd, &remote_info, sizeof(remote_info))) {
         close(sock_fd);
-        return std::unexpected("TCP read of remote QpExchangeInfo failed");
+        return std::unexpected("TCP read of remote RemoteEndpoint failed");
     }
 
     close(sock_fd);
@@ -190,6 +183,8 @@ void print_usage(const char* prog) {
 } // namespace
 
 int main(int argc, char* argv[]) {
+    using namespace adder::verbs;
+
     PingPongConfig cfg;
 
     // Parse command line arguments
@@ -251,131 +246,321 @@ int main(int argc, char* argv[]) {
               << " GID Index:  " << cfg.g_index << "\n"
               << "=========================================================\n";
 
-    // =========================================================================
-    // Step 1: Find RDMA Device with ibv_get_device_list
-    // =========================================================================
-    // TODO: Step 1: Enumerate available RDMA devices via ibv_get_device_list().
-    // If cfg.device_name is empty, pick the first active device. Otherwise match by name.
-    // Call ibv_open_device() to get struct ibv_context*.
-    auto **available_devices = ibv_get_device_list(nullptr);
-    if (cfg.device_name.length() == 0)
+    const auto role = cfg.is_server ? "[Server]" : "[Client]";
 
-
-
-    struct ibv_context* ib_ctx = nullptr;
-    std::cout << "// TODO: Step 1: Find and open RDMA device (ibv_get_device_list, ibv_open_device)\n";
+    // Replication of Rust's ? operator. Didn't want macro stuff like absl.
+    auto check = [&](auto&& res) -> bool {
+        if (!res) {
+            std::cerr << role << " [Error] " << res.error() << "\n";
+            return false;
+        }
+        return true;
+    };
 
     // =========================================================================
-    // Step 2: Query Port and Allocate Protection Domain (ibv_alloc_pd)
+    // Step 1: Device Enumeration & Context Creation
+    // Goal: Enumerate available RDMA devices, select the target device matching
+    // configuration (or default to first active device), and open an operational context.
     // =========================================================================
-    // TODO: Step 2: Query port attributes with ibv_query_port() to verify PORT_ACTIVE
-    // and retrieve the active_mtu.
-    // Priority 2.2: For UD transport, ensure cfg.message_size <= mtu_to_bytes(port_attr.active_mtu).
-    struct ibv_pd* pd = nullptr;
-    size_t active_mtu_bytes = 1024;
-    std::cout << "// TODO: Step 2: Query port active_mtu and allocate PD (ibv_alloc_pd)\n";
+
+    auto device_list = DeviceList{};
+    if (device_list.empty()) { std::cerr << role << " " << "DeviceList returned empty\n"; return 1; }
+
+    auto device_ex = device_list.select_device(cfg.device_name);
+    // if (!device_ex) { std::cerr << role << " [Error] " << device_ex.error() << "\n"; return 1; }
+    if (!check(device_ex)) return 1;
+    const auto device = std::move(*device_ex);
+
+    auto context_ex = Context::open(device);
+    // if(!context_ex) { std::cerr << role << " [Error] " << context_ex.error() << "\n"; return 1; }
+    if (!check(context_ex)) return 1;
+    const Context context = std::move(*context_ex);
+
+    // Q: Use Immediately Invoked Lambdas (IIFE), instead of the `if (!capture) {}` code?
+    // A: Maybe, but here the linear flow is more readable. The monadics add indentation creep, plus aren't easy in debugger.
+
+    // Use Client or Server, instead of "main"? Done.
+
+    // Q: Are the checks necessary, or should the program be simply left to crash?
+    // A: Necessary.
+
+    // =========================================================================
+    // Step 2: Port Query & Protection Domain Allocation
+    // Goal: Query the physical port to verify active link state (PORT_ACTIVE),
+    // resolve the active MTU, and allocate a Protection Domain for resource isolation.
+    // =========================================================================
+
+    auto port_ex = context.query_port(cfg.ib_port);
+    if (!check(port_ex)) return 1;
+    if (port_ex->state != IBV_PORT_ACTIVE)
+        { std::cerr << role << " [Error] Port (" <<cfg.ib_port<< ") is inactive\n"; return 1; }
+    const auto port = std::move(*port_ex);
+
+    auto bytes_ex = context.get_active_mtu_bytes(cfg.ib_port);
+    if (!check(bytes_ex)) return 1;
+    const auto active_mtu_bytes = std::move(*bytes_ex);
 
     // Validate UD message size against active MTU
     if (cfg.transport == "ud" && cfg.message_size > active_mtu_bytes) {
-        std::cerr << "[Error] UD message size (" << cfg.message_size
+        std::cerr << role << " [Error] "
+                  << "[Error] UD message size (" << cfg.message_size
                   << " B) exceeds active MTU (" << active_mtu_bytes
                   << " B). Set interface MTU to 9000 or reduce message size.\n";
         return 1;
     }
 
-    // =========================================================================
-    // Step 3: Register Memory Region (ibv_reg_mr)
-    // =========================================================================
-    // Priority 2.2: For UD receives, the HCA writes a 40-byte Global Routing Header (GRH)
-    // before the payload. Therefore:
-    // - UD receive buffer must be allocated as (cfg.message_size + kUdGrhOffset) bytes.
-    // - The posted recv SGE length must be (cfg.message_size + kUdGrhOffset) starting at buf.
-    // - The actual application payload pointer starts at (buf + kUdGrhOffset).
-    // Priority 6.2: Check for ENOMEM and provide actionable diagnostic for RLIMIT_MEMLOCK.
-    struct ibv_mr* mr = nullptr;
-    size_t alloc_size = (cfg.transport == "ud") ? (cfg.message_size + kUdGrhOffset) : cfg.message_size;
-    uint8_t* buf = nullptr;
-    std::cout << "// TODO: Step 3: Register memory buffer (" << alloc_size << " bytes, accounting for 40-byte GRH on UD)\n";
+    auto gid_ex = context.query_gid(cfg.ib_port, cfg.g_index);
+    if (!check(gid_ex)) return 1;
+    const auto gid = std::move(*gid_ex);
 
-    if (pd) {
-        // If PD was allocated, check registration and handle ENOMEM diagnostic
-        int access_flags = IBV_ACCESS_LOCAL_WRITE | (cfg.use_rdma_write ? IBV_ACCESS_REMOTE_WRITE : 0);
-        mr = ibv_reg_mr(pd, buf, alloc_size, access_flags);
-        if (!mr) {
-            if (errno == ENOMEM) {
-                std::cerr << "[Error] ibv_reg_mr failed with ENOMEM. Check 'ulimit -l' and set 'ulimit -l unlimited' or configure /etc/security/limits.conf\n";
-            } else {
-                std::cerr << "[Error] ibv_reg_mr failed with errno " << errno << " (" << strerror(errno) << ")\n";
-            }
+    auto protection_domain_ex = ProtectionDomain::alloc(context);
+    if (!check(protection_domain_ex)) return 1;
+    const auto protection_domain = std::move(*protection_domain_ex);
+
+    // =========================================================================
+    // Step 3: Page-Aligned Buffer Allocation & Memory Registration
+    // Goal: Allocate a page-aligned contiguous memory buffer (accounting for the
+    // 40-byte GRH offset on UD receives) and register it with the Protection Domain.
+    // =========================================================================
+
+    const auto alloc_size = cfg.message_size + (cfg.transport == "ud" ? kUdGrhOffset : 0);
+    int access_flags = IBV_ACCESS_LOCAL_WRITE | (cfg.use_rdma_write ? IBV_ACCESS_REMOTE_WRITE : 0) ;
+
+    struct CleanupCrew {
+        void operator() (std::byte* pointer) const noexcept {
+            ::operator delete[] (pointer, std::align_val_t {4096});
+        }
+    };
+    std::unique_ptr<std::byte[], CleanupCrew> buffer (new (std::align_val_t {4096}) std::byte[alloc_size]);
+
+    auto memory_region_ex = MemoryRegion::register_buffer(protection_domain, buffer.get(), alloc_size, access_flags);
+    if (!check(memory_region_ex)) return 1;
+    const auto memory_region = std::move(*memory_region_ex);
+
+    // =========================================================================
+    // Step 4: Completion Queue (CQ) Creation
+    // Goal: Instantiate a Completion Queue sized to hold all in-flight work
+    // completions for the benchmark iterations.
+    // =========================================================================
+
+    auto completion_queue_ex = CompletionQueue::create(context);
+    if (!check(completion_queue_ex)) return 1;
+    auto completion_queue = std::move(*completion_queue_ex);
+
+    // =========================================================================
+    // Step 5: Queue Pair (QP) Instantiation
+    // Goal: Configure and instantiate a Queue Pair attached to the Protection Domain
+    // and Completion Queue for the selected transport (RC or UD), setting inline capacity.
+    // =========================================================================
+
+    QpConfig qp_cfg {};
+    qp_cfg.qp_type = (cfg.transport == "ud") ? IBV_QPT_UD : IBV_QPT_RC;
+    qp_cfg.max_send_wr = 128;
+    qp_cfg.max_recv_wr = 128;
+    qp_cfg.max_inline_data = cfg.use_inline ? 256u : 0u;
+
+    auto queue_pair_ex = QueuePair::create(protection_domain, completion_queue, completion_queue, qp_cfg);
+    if (!check(queue_pair_ex)) return 1;
+    auto queue_pair = std::move(*queue_pair_ex);
+
+    // =========================================================================
+    // Step 6: Out-of-Band Parameter Exchange (TCP)
+    // Goal: Package local Queue Pair endpoint parameters (QPN, LID/GID, starting PSN,
+    // buffer virtual address, rkey) and exchange them with the peer over TCP.
+    // =========================================================================
+    RemoteEndpoint local_info{
+        .qpn = queue_pair.qp_num(),
+        .lid = port.lid,
+        .psn = static_cast<uint32_t>(rand() & 0xffffff),
+        .gid = gid,
+        .vaddr = reinterpret_cast<uint64_t>(buffer.get()),
+        .rkey = memory_region.rkey()
+    };
+
+    auto remote_info_ex = exchange_qp_info(cfg, local_info);
+    if (!check(remote_info_ex)) return 1;
+    const auto remote_info = std::move(*remote_info_ex);
+
+    // =========================================================================
+    // Step 7: Queue Pair State Machine Progression
+    // Goal: Progress the Queue Pair state machine from RESET -> INIT -> RTR -> RTS
+    // using the exchanged remote peer parameters to arm the hardware data path.
+    // =========================================================================
+    if (cfg.transport == "rc") {
+        auto transition_ex = qp_state::transition_rc_to_init(queue_pair.get(), cfg.ib_port)
+            .and_then([&] {
+                return qp_state::transition_rc_to_rtr(
+                    queue_pair.get(), remote_info, cfg.ib_port, cfg.g_index, port.active_mtu
+                );
+            })
+            .and_then([&] {
+                return qp_state::transition_rc_to_rts(queue_pair.get(), local_info.psn);
+            });
+
+        if (!check(transition_ex)) return 1;
+    }
+    else if (cfg.transport == "ud") {
+        auto transition_ex = qp_state::transition_ud_to_init(queue_pair.get(), cfg.ib_port, kDefaultQKey)
+            .and_then([&] {
+                return qp_state::transition_ud_to_rtr(queue_pair.get());
+            })
+            .and_then([&] {
+                return qp_state::transition_ud_to_rts(queue_pair.get(), local_info.psn);
+            });
+
+        if (!check(transition_ex)) return 1;
+    }
+    else {
+        std::cerr << role << " [Error] Invalid transport mechanism. Use either 'rc' or 'ud'\n";
+        return 1;
+    }
+
+    struct ibv_ah* address_handle = nullptr;
+    if (cfg.transport == "ud") {
+        struct ibv_ah_attr address_handle_attr {};
+        address_handle_attr.is_global = 1;
+        address_handle_attr.port_num = cfg.ib_port;
+
+        address_handle_attr.grh = {};
+        address_handle_attr.grh.dgid = remote_info.gid;
+        address_handle_attr.grh.sgid_index = static_cast<uint8_t>(cfg.g_index);
+        address_handle_attr.grh.hop_limit = 64;
+
+        address_handle = ibv_create_ah(protection_domain.get(), &address_handle_attr);
+        if (!address_handle) {
+            std::cerr << role << " [Error] Failed to create Address Handle for UD\n";
             return 1;
         }
     }
 
     // =========================================================================
-    // Step 4: Create Completion Queue (ibv_create_cq)
+    // Step 8: Ping-Pong Benchmark Data Path & Latency Sampling
+    // Goal: Execute the synchronized ping-pong loop (pre-posting receives, posting
+    // sends or RDMA writes, and spin-polling completions with nanosecond timing),
+    // recording one-way latency samples into the histogram after a warmup period.
     // =========================================================================
-    // TODO: Step 4: Create CQ with ibv_create_cq() with sufficient depth (e.g. 128 entries).
-    struct ibv_cq* cq = nullptr;
-    std::cout << "// TODO: Step 4: Create Completion Queue (ibv_create_cq)\n";
+    // TODO: Step 8
 
-    // =========================================================================
-    // Step 5: Create Queue Pair (ibv_create_qp)
-    // =========================================================================
-    // TODO: Step 5: Configure ibv_qp_init_attr:
-    // Set qp_type = (cfg.transport == "ud" ? IBV_QPT_UD : IBV_QPT_RC).
-    // Attach send_cq and recv_cq. Call ibv_create_qp(pd, &qp_init_attr).
-    struct ibv_qp* qp = nullptr;
-    std::cout << "// TODO: Step 5: Create Queue Pair for " << cfg.transport << "\n";
+    // The memory buffer everything hinges on.
+    struct ibv_sge receive_scatter_gather_element {
+        .addr = reinterpret_cast<uint64_t>(buffer.get()),
+        .length = static_cast<uint32_t>(cfg.message_size + (cfg.transport == "ud" ? kUdGrhOffset : 0)),
+        .lkey = memory_region.lkey(),
+    };
 
-    // =========================================================================
-    // Step 6: Move QP through State Transitions (INIT -> RTR -> RTS)
-    // =========================================================================
-    // TODO: Step 6: Transition QP to INIT, RTR, RTS.
-    // - For RC:
-    //   INIT: Set qp_access_flags, port_num, pkey_index.
-    //   RTR:  Set path_mtu, dest_qp_num, rq_psn, max_dest_rd_atomic, min_rnr_timer, ah_attr.
-    //   RTS:  Set timeout, retry_cnt, rnr_retry, sq_psn, max_rd_atomic.
-    // - For UD:
-    //   INIT: Set qkey = kDefaultQKey, port_num, pkey_index.
-    //   RTR:  Requires NO destination attributes.
-    //   RTS:  Set sq_psn only.
-    std::cout << "// TODO: Step 6: Implement QP State Machine transitions (INIT -> RTR -> RTS)\n";
+    struct ibv_sge send_scatter_gather_element {
+        .addr = reinterpret_cast<uint64_t>(buffer.get() + (cfg.transport == "ud" ? kUdGrhOffset : 0)),
+        .length = static_cast<uint32_t>(cfg.message_size),
+        .lkey = memory_region.lkey(),
+    };
 
-    // =========================================================================
-    // Step 7: Exchange QP Parameters over TCP Side Channel
-    // =========================================================================
-    QpExchangeInfo local_info{};
-    // TODO: Populate local_info.qpn, local_info.lid/gid, local_info.psn, vaddr, rkey
-    std::cout << "// TODO: Step 7: Populate local QP info and exchange over TCP\n";
-    auto remote_info_expected = exchange_qp_info(cfg, local_info);
-    if (!remote_info_expected) {
-        std::cerr << "[Error] QP exchange failed: " << remote_info_expected.error() << "\n";
-        // Clean up and exit
+    // Arriving packets sit here.
+    struct ibv_recv_wr receive_work_request {
+        .wr_id = 1,               // User ID
+        .next = nullptr,          // Linked List Terminator
+        .sg_list = &receive_scatter_gather_element,     //Pointer to above
+        .num_sge = 1,             // Number of SGEs
+    };
+
+
+    struct ibv_send_wr send_work_request {};
+    send_work_request.wr_id = 2;
+    send_work_request.next = nullptr;
+    send_work_request.sg_list = &send_scatter_gather_element;
+    send_work_request.num_sge = 1;
+    send_work_request.opcode = cfg.use_rdma_write ? IBV_WR_RDMA_WRITE : IBV_WR_SEND;
+    send_work_request.send_flags = IBV_SEND_SIGNALED;       // Always make a completion request.
+
+    if (cfg.use_inline) send_work_request.send_flags |= IBV_SEND_INLINE;    // Push data to doorbell.
+
+    if (cfg.transport == "ud") {
+        send_work_request.wr.ud.ah = address_handle;
+        send_work_request.wr.ud.remote_qpn = remote_info.qpn;
+        send_work_request.wr.ud.remote_qkey = kDefaultQKey;
     }
 
-    // =========================================================================
-    // Step 8: Execute Ping-Pong Benchmark Loop
-    // =========================================================================
-    // TODO: Step 8: Execute the timed ping-pong loop:
-    // Client:
-    //   For each iteration:
-    //     t_start = NanosecondClock::now_ns()
-    //     ibv_post_send()
-    //     poll_cq_spin() for send completion
-    //     poll_cq_spin() for recv completion
-    //     t_end = NanosecondClock::now_ns()
-    //     rtt_ns = t_end - t_start
-    //     one_way_ns = rtt_ns / 2
-    //     record sample in LatencyHistogram (after warmup)
-    // Server:
-    //   For each iteration:
-    //     ibv_post_recv() before send arrives
-    //     poll_cq_spin() for recv completion
-    //     ibv_post_send() (or RDMA_WRITE) back to client
-    //     poll_cq_spin() for send completion
-    std::cout << "// TODO: Step 8: Run ping-pong loop and collect 1M+ samples in LatencyHistogram\n";
+    if (cfg.use_rdma_write) {
+        send_work_request.wr.rdma.remote_addr = remote_info.vaddr;
+        send_work_request.wr.rdma.rkey = remote_info.rkey;
+    }
+
+    auto poll_completion = [&]() -> bool {
+        struct ibv_wc wc{};
+        while (!completion_queue.poll_one(wc)) {
+            ADDER_CPU_PAUSE(); // Emits _mm_pause() to avoid CPU pipeline stalls
+        }
+        if (wc.status != IBV_WC_SUCCESS) {
+            std::cerr << role << " [Error] Completion failed: "
+                      << ibv_wc_status_str(wc.status) << " (" << wc.status << ")\n";
+            return false;
+        }
+        return true;
+    };
 
     adder::shared::LatencyHistogram hist(cfg.iterations);
+
+    if (cfg.is_server) {
+        const size_t total_iters = cfg.warmup_iterations + cfg.iterations;
+        struct ibv_recv_wr* bad_recieve_work_request = nullptr;
+        struct ibv_send_wr* bad_send_work_request = nullptr;
+
+        for (size_t idx {}; idx < total_iters; idx++) {
+            // 1. PrePost Recieve.
+            if (queue_pair.post_recv(&receive_work_request, &bad_recieve_work_request) != 0){
+                std::cerr << role << " [Error] post_recv failed at iteration " << idx << "\n";
+                return 1;
+            }
+
+            // 2. Wait for Ping.
+            if (!poll_completion()) return 1;
+
+            // 3. Pong back.
+            if (queue_pair.post_send(&send_work_request, &bad_send_work_request) != 0) {
+                std::cerr << role << " [Error] post_send failed at iteration " << idx << "\n"; //Use idx inside the err?
+                return 1;
+            }
+
+            // 4. Wait for send to complete.
+            if (!poll_completion()) return 1;
+        }
+    } else {
+        struct ibv_recv_wr* bad_recieve_work_request = nullptr;
+        struct ibv_send_wr* bad_send_work_request = nullptr;
+
+        // WarmUp Loop
+        for (size_t idx {}; idx < cfg.warmup_iterations; ++idx) {
+            int _ {};
+            _ = queue_pair.post_recv(&receive_work_request, &bad_recieve_work_request);
+            _ = queue_pair.post_send(&send_work_request, &bad_send_work_request);
+            poll_completion();
+            poll_completion();
+        }
+
+        // Hot One
+        for (size_t idx {}; idx < cfg.iterations; ++idx) {
+            int _ {};
+
+            // PrePost Receive
+            if (queue_pair.post_recv(&receive_work_request, &bad_recieve_work_request) != 0){
+                std::cerr << role << " [Error] post_recv failed at iteration " << idx << "\n";
+                return 1;
+            }
+
+            const auto start_t = adder::shared::NanosecondClock::now_ns();
+
+            if (queue_pair.post_send(&send_work_request, &bad_send_work_request) != 0) {
+                std::cerr << role << " [Error] post_send failed at iteration " << idx << "\n";
+                return 1;
+            }
+
+            if (!poll_completion()) return 1;
+            if (!poll_completion()) return 1;
+
+            const auto end_t = adder::shared::NanosecondClock::now_ns();
+
+            hist.record((end_t - start_t)/2);
+        }
+    }
 
     // =========================================================================
     // Step 9: Report Results & Output CSV
@@ -416,6 +601,8 @@ int main(int argc, char* argv[]) {
         }
         std::cout << "[Output] Results written to " << cfg.output_csv << "\n";
     }
+
+    if (address_handle) ibv_destroy_ah(address_handle);
 
     return 0;
 }
