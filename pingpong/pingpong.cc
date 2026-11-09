@@ -484,13 +484,20 @@ int main(int argc, char* argv[]) {
         send_work_request.wr.rdma.rkey = remote_info.rkey;
     }
 
-    auto poll_completion = [&]() -> bool {
+    auto poll_completion = [&](<std::string_view tag = "completion">) -> bool {
         struct ibv_wc wc{};
+        size_t spins = 0;
+        constexpr size_t kMaxSpins = 50'000'000; // ~1-2 seconds of busy polling
+
         while (!completion_queue.poll_one(wc)) {
-            ADDER_CPU_PAUSE(); // Emits _mm_pause() to avoid CPU pipeline stalls
+            ADDER_CPU_PAUSE();
+            if (++spins > kMaxSpins) {
+                std::cerr << role << " [Timeout] Stuck waiting for: " << tag << "\n";
+                return false;
+            }
         }
         if (wc.status != IBV_WC_SUCCESS) {
-            std::cerr << role << " [Error] Completion failed: "
+            std::cerr << role << " [Error] Completion failed (" << tag << "): "
                       << ibv_wc_status_str(wc.status) << " (" << wc.status << ")\n";
             return false;
         }
@@ -512,7 +519,7 @@ int main(int argc, char* argv[]) {
             }
 
             // 2. Wait for Ping.
-            if (!poll_completion()) return 1;
+            if (!poll_completion("Ping Receive")) return 1;
 
             // 3. Pong back.
             if (queue_pair.post_send(&send_work_request, &bad_send_work_request) != 0) {
@@ -521,7 +528,7 @@ int main(int argc, char* argv[]) {
             }
 
             // 4. Wait for send to complete.
-            if (!poll_completion()) return 1;
+            if (!poll_completion("Pong Send Completion")) return 1;
         }
     } else {
         struct ibv_recv_wr* bad_recieve_work_request = nullptr;
@@ -540,8 +547,8 @@ int main(int argc, char* argv[]) {
                 std::cerr << role << " [Warmup Error] post_send failed at " << idx << "\n";
                 return 1;
             }
-            if (!poll_completion()) return 1;
-            if (!poll_completion()) return 1;
+            if (!poll_completion("Send Completion")) return 1;
+            if (!poll_completion("Pong Receive")) return 1;
         }
 
         // Hot One
