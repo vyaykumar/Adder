@@ -527,13 +527,21 @@ int main(int argc, char* argv[]) {
         struct ibv_recv_wr* bad_recieve_work_request = nullptr;
         struct ibv_send_wr* bad_send_work_request = nullptr;
 
+        // Things we do for UD.
+        usleep(200'000);
+
         // WarmUp Loop
         for (size_t idx {}; idx < cfg.warmup_iterations; ++idx) {
-            int _ {};
-            _ = queue_pair.post_recv(&receive_work_request, &bad_recieve_work_request);
-            _ = queue_pair.post_send(&send_work_request, &bad_send_work_request);
-            poll_completion();
-            poll_completion();
+            if (queue_pair.post_recv(&receive_work_request, &bad_recieve_work_request) != 0) {
+                std::cerr << role << " [Warmup Error] post_recv failed at " << idx << "\n";
+                return 1;
+            }
+            if (queue_pair.post_send(&send_work_request, &bad_send_work_request) != 0) {
+                std::cerr << role << " [Warmup Error] post_send failed at " << idx << "\n";
+                return 1;
+            }
+            if (!poll_completion()) return 1;
+            if (!poll_completion()) return 1;
         }
 
         // Hot One
