@@ -1,0 +1,7 @@
+# provenance: date=2026-11-09T18:17:43Z, git_commit=d362e41, hardware_config_id=AMD_A9-9425_RADEON_R5,_5_COMPUTE_CORES_2C+3G_Linux_6.1.0-54-amd64, config_name=pingpong_rc, cpu_model="AMD A9-9425 RADEON R5, 5 COMPUTE CORES 2C+3G", kernel_version="Linux 6.1.0-54-amd64", compiler_version="Clang 17.0", compiler_flags="-O3 -march=native", cpu_governor=performance, turbo_state=unknown, pinned_cores=1
+message_size,transport,direction,percentile,latency_ns,samples,active_mtu
+64,rc,tx,50,3438,100000,1024
+64,rc,tx,90,4246,100000,1024
+64,rc,tx,99,4.00877e+06,100000,1024
+64,rc,tx,99.9,8.50801e+06,100000,1024
+64,rc,tx,99.99,1.411e+07,100000,1024
