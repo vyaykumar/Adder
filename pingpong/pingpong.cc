@@ -484,7 +484,7 @@ int main(int argc, char* argv[]) {
         send_work_request.wr.rdma.rkey = remote_info.rkey;
     }
 
-    auto poll_completion = [&](<std::string_view tag = "completion">) -> bool {
+    auto poll_completion = [&](std::string_view tag = "completion") -> bool {
         struct ibv_wc wc{};
         size_t spins = 0;
         constexpr size_t kMaxSpins = 50'000'000; // ~1-2 seconds of busy polling
@@ -553,7 +553,6 @@ int main(int argc, char* argv[]) {
 
         // Hot One
         for (size_t idx {}; idx < cfg.iterations; ++idx) {
-            int _ {};
 
             // PrePost Receive
             if (queue_pair.post_recv(&receive_work_request, &bad_recieve_work_request) != 0){
