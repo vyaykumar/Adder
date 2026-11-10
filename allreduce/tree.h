@@ -5,8 +5,9 @@
 #include <cstddef>
 #include <expected>
 #include <string>
-#include "allreduce/verbs_qp.h"
-#include "shared/free_list_pool.h"
+#include <allreduce/verbs_qp.h>
+#include <shared/verbs.h>
+#include <shared/free_list_pool.h>
 
 namespace adder::allreduce {
 
@@ -41,17 +42,25 @@ public:
     explicit TreeAllReduce(const TreeTopology& topo);
     ~TreeAllReduce() = default;
 
-    std::expected<void, std::string> setup(
+    // =========================================================================
+    // Binary Tree Link & Pre-Registered Memory Binding
+    // Goal: Bind parent, left-child, and right-child QPs (nullable for root/leaves)
+    // along with the shared CompletionQueue and pre-registered MemoryRegions.
+    // =========================================================================
+    [[nodiscard]] std::expected<void, std::string> setup(
         VerbsQp* qp_parent,
         VerbsQp* qp_left_child,
         VerbsQp* qp_right_child,
-        shared::FreeListMemoryPool* memory_pool
+        shared::FreeListMemoryPool* memory_pool = nullptr,
+        verbs::CompletionQueue* shared_cq = nullptr,
+        verbs::MemoryRegion* tensor_mr = nullptr,
+        verbs::MemoryRegion* staging_mr = nullptr
     );
 
     // Executes 2-phase Binary Tree All-Reduce:
     // Phase 1: Reduce up to root
     // Phase 2: Broadcast down to leaves
-    std::expected<void, std::string> execute(
+    [[nodiscard]] std::expected<void, std::string> execute(
         void* data_buffer,
         size_t total_bytes,
         bool is_float = false
@@ -63,6 +72,9 @@ private:
     VerbsQp* qp_left_{nullptr};
     VerbsQp* qp_right_{nullptr};
     shared::FreeListMemoryPool* pool_{nullptr};
+    verbs::CompletionQueue* cq_{nullptr};
+    verbs::MemoryRegion* tensor_mr_{nullptr};
+    verbs::MemoryRegion* staging_mr_{nullptr};
 };
 
 } // namespace adder::allreduce

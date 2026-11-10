@@ -128,6 +128,14 @@ public:
     [[nodiscard]] struct ibv_qp* get() const noexcept { return qp_; }
     [[nodiscard]] explicit operator bool() const noexcept { return qp_ != nullptr; }
 
+    // =========================================================================
+    // D2 Extension: High-Level RC State Machine Progression Helper
+    // Goal: Allow a QueuePair to transition RESET -> INIT -> RTR -> RTS in one
+    // monadic pipeline using RemoteEndpoint (see state_transitions.h).
+    // =========================================================================
+    // TODO: Implement connect_rc(const RemoteEndpoint& remote, uint32_t local_psn, ...)
+    // by chaining qp_state::transition_rc_to_init -> transition_rc_to_rtr -> transition_rc_to_rts.
+
 private:
     explicit QueuePair(struct ibv_qp* qp, uint32_t inline_bytes)
         : qp_(qp), actual_inline_data_(inline_bytes) {}

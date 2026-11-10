@@ -35,3 +35,4 @@ Desktop.ini
 *.tmp
 *.log
 .zed/
+*.tar.gz
