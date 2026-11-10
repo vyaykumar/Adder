@@ -51,18 +51,6 @@ struct PingPongConfig {
 
 using adder::verbs::RemoteEndpoint;
 
-// Helper: Convert ibv_mtu enum to actual byte count
-constexpr size_t mtu_to_bytes(enum ibv_mtu mtu) noexcept {
-    switch (mtu) {
-        case IBV_MTU_256:  return 256;
-        case IBV_MTU_512:  return 512;
-        case IBV_MTU_1024: return 1024;
-        case IBV_MTU_2048: return 2048;
-        case IBV_MTU_4096: return 4096;
-        default:           return 1024;
-    }
-}
-
 // Priority 2.1: Robust streaming helpers to prevent TCP fragmentation bugs
 inline bool write_exact(int fd, const void* buf, size_t len) {
     const char* p = static_cast<const char*>(buf);
