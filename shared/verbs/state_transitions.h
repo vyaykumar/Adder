@@ -162,6 +162,7 @@ namespace qp_state {
             )
         );
     }
+    return {};
 }
 
 /// \brief Transitions a UD Queue Pair from INIT -> RTR.
@@ -173,13 +174,14 @@ namespace qp_state {
 
     int ret = ibv_modify_qp(qp, &attr, IBV_QP_STATE);
     if (ret != 0) {
-        int err = ret > 0 : ret ? errno;
+        int err = ret > 0 ? ret : errno;
         return std::unexpected(
             std::format("[StateTransitions::UD_to_RTR] Failed to transition UD QueuePair {} to RTR: {} ({})",
                 qp->qp_num, std::generic_category().message(err), err
             )
         );
     }
+    return {};
 }
 
 /// \brief Transitions a UD Queue Pair from RTR -> RTS.
@@ -202,6 +204,7 @@ namespace qp_state {
                 qp->qp_num, std::generic_category().message(err), err)
         );
     }
+    return {};
 }
 
 // =============================================================================
@@ -221,7 +224,6 @@ namespace qp_state {
         return std::unexpected(
             std::format("[StateTransitions::to_ERROR] Failed to transition QueuePair {} to ERROR: {} ({})",
                 qp->qp_num, std::generic_category().message(err), err)
-            )
         );
     }
     return {};

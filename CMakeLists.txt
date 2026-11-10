@@ -25,8 +25,10 @@ add_compile_options(
     -Wconversion
     -Wshadow
     $<$<CONFIG:Release>:-O3>
-    $<$<CONFIG:RelWithDebInfo>:-O3 -g>
-    $<$<CONFIG:Debug>:-O0 -g3>
+    $<$<CONFIG:RelWithDebInfo>:-O3>
+    $<$<CONFIG:RelWithDebInfo>:-g>
+    $<$<CONFIG:Debug>:-O0>
+    $<$<CONFIG:Debug>:-g3>
 )
 
 # Check for architecture-native optimizations if supported
@@ -98,25 +100,6 @@ target_include_directories(adder_shared INTERFACE
 target_link_libraries(adder_shared INTERFACE
     Threads::Threads
     ${RDMA_LIBRARIES}
-)
-
-# Priority 1.2: Guard C++ headers with generator expressions
-# Prevents pure C targets (agg_userspace.c, agg_control.c) from failing when PCH is applied.
-target_precompile_headers(adder_shared INTERFACE
-    $<$<COMPILE_LANGUAGE:CXX>:
-        <infiniband/verbs.h>
-        <expected>
-        <span>
-        <chrono>
-        <atomic>
-        <memory>
-        <vector>
-        <string>
-        <string_view>
-    >
-    $<$<COMPILE_LANGUAGE:C>:
-        <infiniband/verbs.h>
-    >
 )
 
 # -----------------------------------------------------------------------------
